@@ -2,6 +2,50 @@
 
 Control Spotify from inside Obsidian. A now-playing sidebar with hover-revealed transport, time-synced lyrics, upcoming-tracks queue, search palette, hotkey-bindable transport commands, and "insert track into note." Requires Spotify Premium for playback control.
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/45523254-552e-420e-9482-e81ee66ab6dd" width="900" alt="Spotify Control sidebar inside Obsidian" />
+</p>
+
+<table align="center">
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/5fc06332-1604-47df-8e07-5e6d467d549b" width="380" alt="Now-playing sidebar with hover controls" />
+      <br/><sub><b>Hover overlay</b> — shuffle/repeat in corners, prev/play/next centered, lyrics + queue toggles bottom-left.</sub>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/1f6121df-e486-4639-8be6-ae32d597aab9" width="380" alt="Sidebar showing time-synced lyrics" />
+      <br/><sub><b>Time-synced lyrics</b> via LRCLIB. Active line highlighted; click any line to seek.</sub>
+    </td>
+  </tr>
+</table>
+
+<table align="center">
+  <tr>
+    <td width="33%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/6315d743-45a4-417a-8060-62b7a0f2d8b2" width="280" alt="Sidebar variant" />
+      <br/><sub>Always-visible transport</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/253f364e-3d9d-4670-915c-a46d4d8e398a" width="280" alt="Sidebar variant" />
+      <br/><sub>Lyrics replacing the art</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/f607ef41-9e95-49d4-a95d-69c261dc6d9e" width="280" alt="Sidebar variant" />
+      <br/><sub>Queue panel — click any track to play within context</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/8113ba07-d020-41ba-bf04-d597db040f4e" width="280" alt="Inline login flow in empty state" />
+      <br/><sub>Inline login (no need to dig through settings)</sub>
+    </td>
+    <td colspan="2" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/0d9f8fb2-8261-46f4-a8a4-e7f725c1b67f" width="600" alt="Settings tab" />
+      <br/><sub>Settings tab with theme-matched controls</sub>
+    </td>
+  </tr>
+</table>
+
 ## Features
 
 **Now-playing sidebar.** Album art (with optional hover overlay for prev/play/next/shuffle/repeat), large track title, artist, album, seek bar, volume, custom device picker. Polls Spotify every 3s (configurable). Pauses polling when the Obsidian window is hidden.
