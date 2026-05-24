@@ -1,0 +1,13 @@
+# Never commit OAuth tokens. data.json holds the user's Spotify access + refresh tokens.
+data.json
+
+# Build artefacts — keep main.js committed only if you distribute the built plugin.
+node_modules/
+
+# Local supply-chain scan reports
+.scguard/
+
+# Editor noise
+.DS_Store
+*.log
+

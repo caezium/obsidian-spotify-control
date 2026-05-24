@@ -1,0 +1,1291 @@
+/*
+ * spotify-control plugin styles.
+ *
+ * Theme-friendly: uses Obsidian CSS variables so light/dark/custom themes
+ * inherit cleanly. Layout inspired by Sleeve: cover-art-centric, with
+ * controls revealed on hover when in hover-reveal mode.
+ *
+ * Polish principles applied (see make-interfaces-feel-better skill):
+ *   - Concentric border radius (outer = inner + padding)
+ *   - Optical alignment for the play triangle (1px right nudge)
+ *   - Layered box-shadows for depth, not borders
+ *   - Subtle 1px outline on images for consistent depth
+ *   - scale(0.96) on press for tactile feedback
+ *   - Cross-fade play/pause icons via opacity + scale + blur
+ *   - Font smoothing on root for crisper text on macOS
+ *   - tabular-nums on every dynamically-updating number
+ *   - Min 40×40 hit area on transport buttons (extended pseudo-element)
+ *   - Specific transition-property values, never `transition: all`
+ */
+
+.spotify-control-view {
+	padding: 12px 10px;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	-webkit-font-smoothing: antialiased;
+}
+
+/* ── Empty state ──────────────────────────────────────────────────── */
+.spotify-control-view .sc-empty {
+	display: none;
+	text-align: center;
+	padding: 32px 12px;
+	background: var(--background-secondary);
+	border-radius: var(--radius-m);
+}
+.spotify-control-view .sc-empty-icon {
+	font-size: 36px;
+	margin-bottom: 8px;
+	opacity: 0.7;
+}
+.spotify-control-view .sc-empty-text {
+	color: var(--text-muted);
+	line-height: 1.4;
+	text-wrap: pretty;
+	margin-bottom: 14px;
+}
+.spotify-control-view .sc-empty-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	align-items: stretch;
+}
+.spotify-control-view .sc-empty-actions:empty {
+	display: none;
+}
+.spotify-control-view .sc-empty-btn {
+	border: none;
+	border-radius: var(--radius-s);
+	padding: 8px 16px;
+	font-size: var(--font-ui-small);
+	font-weight: 500;
+	cursor: pointer;
+	transition-property: background, color, scale;
+	transition-duration: 120ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-empty-btn-primary {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+.spotify-control-view .sc-empty-btn-primary:hover {
+	background: var(--interactive-accent-hover);
+}
+.spotify-control-view .sc-empty-btn-secondary {
+	background: var(--background-modifier-border);
+	color: var(--text-normal);
+}
+.spotify-control-view .sc-empty-btn-secondary:hover {
+	background: var(--background-modifier-hover);
+}
+.spotify-control-view .sc-empty-btn:active {
+	scale: 0.97;
+}
+
+/* ── Main player ──────────────────────────────────────────────────── */
+.spotify-control-view .sc-player {
+	display: none;
+	flex-direction: column;
+	gap: 12px;
+	min-height: 0;
+}
+/* In below-mode with lyrics visible, the player stretches to fill the
+ * sidebar so the below-slot (and its lyrics panel) can grow into the
+ * available space. Otherwise the player stays at content-height so the
+ * sidebar doesn't have weird vertical padding when lyrics are off. */
+.spotify-control-view.is-lyrics-below.is-panel-open .sc-player {
+	flex: 1;
+}
+
+/* ── Art stack (art + lyrics panel + lyrics toggle) ───────────────── */
+/*
+ * Capped at 320px so the art doesn't dominate on wide sidebars (and the
+ * empty space below the player feels less excessive). Centered with auto
+ * margins so it looks intentional in both narrow and wide layouts.
+ */
+.spotify-control-view .sc-art-stack {
+	position: relative;
+	width: 100%;
+	max-width: 320px;
+	aspect-ratio: 1 / 1;
+	margin: 0 auto;
+}
+
+/* ── Album art + hover overlay ────────────────────────────────────── */
+.spotify-control-view .sc-art-wrap {
+	width: 100%;
+	height: 100%;
+	background: var(--background-secondary);
+	border-radius: var(--radius-l);
+	overflow: hidden;
+	box-shadow:
+		0 2px 4px rgba(0, 0, 0, 0.08),
+		0 8px 24px rgba(0, 0, 0, 0.16);
+	position: relative;
+}
+/* Hide album art only in REPLACE mode when lyrics are visible.
+ * In below mode, art stays visible above the lyrics panel. */
+.spotify-control-view.is-panel-open.is-lyrics-replace .sc-art-wrap {
+	display: none;
+}
+.spotify-control-view .sc-art-wrap::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: var(--radius-l);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+	pointer-events: none;
+}
+.spotify-control-view .sc-art {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+.spotify-control-view .sc-art-placeholder {
+	width: 100%;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+	opacity: 0.4;
+}
+.spotify-control-view .sc-art-placeholder svg {
+	width: 48px;
+	height: 48px;
+}
+
+/*
+ * Hover overlay: dark scrim + centered prev/play/next buttons.
+ * Hidden by default; visible only when (a) hover mode is on AND (b) the
+ * art-wrap is being hovered. CSS combinator selectors keep this purely
+ * declarative — no JS pointerenter handling needed.
+ */
+.spotify-control-view .sc-art-overlay {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 14px;
+	background: rgba(0, 0, 0, 0.45);
+	opacity: 0;
+	pointer-events: none;
+	transition-property: opacity;
+	transition-duration: 180ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+	border-radius: var(--radius-l);
+}
+.spotify-control-view.is-hover-mode .sc-art-wrap:hover .sc-art-overlay,
+.spotify-control-view.is-hover-mode .sc-art-wrap:focus-within .sc-art-overlay {
+	opacity: 1;
+	pointer-events: auto;
+}
+/* In non-hover mode, overlay buttons are never shown (transport row carries them). */
+.spotify-control-view:not(.is-hover-mode) .sc-art-overlay {
+	display: none;
+}
+/* In hover mode, hide the duplicate prev/play/next in the transport row. */
+.spotify-control-view.is-hover-mode .sc-hide-in-hover-mode {
+	display: none !important;
+}
+
+/*
+ * Unified on-art button styling.
+ *
+ * All overlay/on-art controls share one frosted-glass aesthetic:
+ *   - rgba(0,0,0,0.5) background + backdrop-filter blur
+ *   - white icon
+ *   - circular, consistent sizing (32px secondary, 36px center prev/next)
+ *   - same shadow weight
+ *   - scale(0.94) on press
+ *   - active state = icon color shift to accent, NOT full background swap
+ *     (prevents the jarring color jump the user flagged)
+ *
+ * The center PLAY button alone uses accent background — it's the primary
+ * action and deserves visual weight. Everything else is consistent glass.
+ *
+ * On-art uses hardcoded colors (necessary — album-art backgrounds are
+ * unpredictable, Obsidian theme vars wouldn't give legible contrast).
+ * Off-art buttons (transport row, settings) DO use Obsidian vars.
+ */
+.spotify-control-view .sc-overlay-btn {
+	background: rgba(0, 0, 0, 0.55);
+	-webkit-backdrop-filter: blur(10px) saturate(140%);
+	backdrop-filter: blur(10px) saturate(140%);
+	border: none;
+	color: rgba(255, 255, 255, 0.95);
+	border-radius: 50%;
+	width: 36px;
+	height: 36px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	position: relative;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+	transition-property: background, scale, color, box-shadow;
+	transition-duration: 140ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-overlay-btn:hover {
+	background: rgba(0, 0, 0, 0.7);
+}
+.spotify-control-view .sc-overlay-btn:active {
+	scale: 0.94;
+}
+.spotify-control-view .sc-overlay-btn svg {
+	width: 16px;
+	height: 16px;
+}
+/* Center play button: accent-colored to anchor the layout. Slightly larger
+ * but same shape language as everything else. */
+.spotify-control-view .sc-overlay-play {
+	width: 52px;
+	height: 52px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	-webkit-backdrop-filter: none;
+	backdrop-filter: none;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.spotify-control-view .sc-overlay-play:hover {
+	background: var(--interactive-accent-hover);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.spotify-control-view .sc-overlay-play svg {
+	width: 20px;
+	height: 20px;
+}
+
+/* ── Lyrics panel ─────────────────────────────────────────────────── */
+/*
+ * Two modes:
+ *   - "replace": panel lives inside .sc-art-stack and absolutely fills it
+ *     when lyrics are active. Art is hidden.
+ *   - "below": panel lives in .sc-lyrics-below-slot below the device picker,
+ *     fills the remaining sidebar height. Art stays visible above.
+ *
+ * The panel is the same DOM node in both modes; view.ts reparents it.
+ */
+.spotify-control-view .sc-lyrics-panel {
+	display: none;
+	position: relative; /* establishes its own stacking context */
+	background: var(--background-secondary);
+	border-radius: var(--radius-l);
+	overflow: hidden;
+	min-height: 0;
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+		0 2px 4px rgba(0, 0, 0, 0.08),
+		0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+/* replace mode → panel absolutely covers the art stack */
+.spotify-control-view.is-lyrics-replace .sc-art-stack .sc-lyrics-panel {
+	position: absolute;
+	inset: 0;
+}
+.spotify-control-view.is-lyrics-replace.is-panel-open.is-panel-lyrics .sc-lyrics-panel,
+.spotify-control-view.is-lyrics-replace.is-panel-open.is-panel-queue .sc-queue-panel {
+	display: block;
+}
+
+/* below mode → panel grows to fill remaining sidebar space */
+.spotify-control-view .sc-lyrics-below-slot {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+/* When NO panel is open in below mode, the slot collapses to zero so the
+ * info section sits right under the art. When a panel IS open, the slot
+ * grows to fill remaining sidebar height. */
+.spotify-control-view.is-lyrics-below.is-panel-open .sc-lyrics-below-slot {
+	flex: 1;
+	min-height: 200px;
+}
+/* Panels inside the below-slot. Display block-flex only when their
+ * specific panel class is active on the root. Both panels share the
+ * same flex slot — no double-rendering. */
+.spotify-control-view.is-lyrics-below.is-panel-open.is-panel-lyrics .sc-lyrics-below-slot .sc-lyrics-panel,
+.spotify-control-view.is-lyrics-below.is-panel-open.is-panel-queue .sc-lyrics-below-slot .sc-queue-panel {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+}
+.spotify-control-view .sc-lyrics-scroll {
+	height: 100%;
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden; /* defeat occasional horizontal scrollbar */
+	padding: 12px 16px;
+	scrollbar-width: thin;
+	scroll-behavior: smooth;
+}
+/* In below mode the panel is flex-column; the scroll fills its parent. */
+.spotify-control-view.is-lyrics-below .sc-lyrics-panel .sc-lyrics-scroll {
+	height: auto;
+}
+/* Top/bottom spacer so first/last line can center vertically. */
+.spotify-control-view .sc-lyrics-padding {
+	height: 40%;
+}
+.spotify-control-view .sc-lyrics-line {
+	color: var(--text-muted);
+	font-size: var(--font-ui-medium);
+	font-weight: 500;
+	line-height: 1.5;
+	padding: 6px 4px;
+	border-radius: var(--radius-s);
+	text-wrap: pretty;
+	/* Defeat horizontal overflow on long lines without breakable spaces
+	 * (some languages, URLs in lyrics, or pathological data). */
+	overflow-wrap: break-word;
+	word-break: break-word;
+	hyphens: auto;
+	opacity: 0.5;
+	transition-property: opacity, color, scale, background;
+	transition-duration: 240ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+	transform-origin: left center;
+}
+.spotify-control-view .sc-lyrics-line-clickable {
+	cursor: pointer;
+}
+.spotify-control-view .sc-lyrics-line-clickable:hover {
+	background: var(--background-modifier-hover);
+	opacity: 1;
+	color: var(--text-normal);
+}
+.spotify-control-view .sc-lyrics-line.is-active {
+	color: var(--text-normal);
+	opacity: 1;
+	font-weight: 700;
+	scale: 1.03;
+}
+.spotify-control-view .sc-lyrics-line-plain {
+	opacity: 1;
+	color: var(--text-normal);
+	font-weight: 400;
+	cursor: default;
+}
+.spotify-control-view .sc-lyrics-status {
+	padding: 40% 16px;
+	text-align: center;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	text-wrap: pretty;
+}
+
+/* Legacy .sc-lyrics-toggle absolute-positioning was removed in v0.4.
+ * The toggle now lives inside .sc-panel-toggles (cluster handles positioning)
+ * or in the transport row (when hover-mode is off). The icon + active +
+ * disabled states are defined under .sc-panel-toggle and below. */
+
+/* ── Track info — Sleeve-style typography ─────────────────────────── */
+.spotify-control-view .sc-info {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-height: 60px;
+}
+.spotify-control-view .sc-title {
+	font-weight: 700;
+	font-size: var(--font-ui-large);
+	color: var(--text-normal);
+	letter-spacing: -0.01em;
+	line-height: 1.2;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	transition-property: color;
+	transition-duration: 120ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-title.sc-title-clickable {
+	cursor: pointer;
+}
+.spotify-control-view .sc-title.sc-title-clickable:hover {
+	color: var(--interactive-accent);
+}
+.spotify-control-view .sc-artist {
+	font-weight: 500;
+	color: var(--text-muted);
+	font-size: var(--font-ui-medium);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.spotify-control-view .sc-album {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* ── Seek bar ─────────────────────────────────────────────────────── */
+.spotify-control-view .sc-seek-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.spotify-control-view .sc-seek {
+	flex: 1;
+	height: 4px;
+}
+.spotify-control-view .sc-time {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	min-width: 36px;
+	text-align: center;
+}
+
+/* ── Transport (shuffle/repeat always; prev/play/next conditional) ─ */
+.spotify-control-view .sc-transport {
+	display: flex;
+	align-items: center;
+	justify-content: space-around;
+	padding: 4px 0;
+	gap: 4px;
+}
+.spotify-control-view .sc-btn {
+	background: transparent;
+	border: none;
+	padding: 6px;
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	color: var(--text-muted);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+	transition-property: color, background, scale;
+	transition-duration: 120ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-btn::before {
+	content: '';
+	position: absolute;
+	inset: 50% 50%;
+	width: 40px;
+	height: 40px;
+	transform: translate(-50%, -50%);
+}
+.spotify-control-view .sc-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+.spotify-control-view .sc-btn:active {
+	scale: 0.96;
+}
+.spotify-control-view .sc-btn svg {
+	width: 18px;
+	height: 18px;
+}
+
+/*
+ * Active state for shuffle/repeat: full pill background, not just tint.
+ * This is the fix for "the random/loop indicators don't really show
+ * anything" — now they read as clearly toggled.
+ */
+.spotify-control-view .sc-btn.is-active {
+	color: var(--text-on-accent);
+	background: var(--interactive-accent);
+}
+.spotify-control-view .sc-btn.is-active:hover {
+	color: var(--text-on-accent);
+	background: var(--interactive-accent-hover);
+}
+/* Repeat-one: small dot below the icon as Spotify's desktop app does. */
+.spotify-control-view .sc-btn.is-repeat-one::after {
+	content: '';
+	position: absolute;
+	bottom: 2px;
+	left: 50%;
+	transform: translateX(-50%);
+	width: 3px;
+	height: 3px;
+	border-radius: 50%;
+	background: var(--text-on-accent);
+}
+
+.spotify-control-view .sc-play-main {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-radius: 50%;
+	width: 44px;
+	height: 44px;
+	box-shadow:
+		0 1px 2px rgba(0, 0, 0, 0.1),
+		0 4px 10px rgba(0, 0, 0, 0.1);
+	transition-property: color, background, scale, box-shadow;
+	transition-duration: 160ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-play-main:hover {
+	background: var(--interactive-accent-hover);
+	color: var(--text-on-accent);
+	box-shadow:
+		0 1px 2px rgba(0, 0, 0, 0.12),
+		0 6px 16px rgba(0, 0, 0, 0.16);
+}
+.spotify-control-view .sc-play-main:active {
+	scale: 0.96;
+}
+.spotify-control-view .sc-play-main svg {
+	width: 20px;
+	height: 20px;
+}
+
+/* Icon-stack cross-fade (both play and pause stacked, transition between). */
+.spotify-control-view .sc-icon-stack {
+	position: relative;
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.spotify-control-view .sc-overlay-play .sc-icon-stack {
+	width: 22px;
+	height: 22px;
+}
+.spotify-control-view .sc-icon {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	opacity: 0;
+	scale: 0.25;
+	filter: blur(4px);
+	transition-property: opacity, scale, filter;
+	transition-duration: 220ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-icon.sc-icon-visible {
+	opacity: 1;
+	scale: 1;
+	filter: blur(0px);
+}
+.spotify-control-view .sc-icon-play {
+	transform: translateX(1px);
+}
+
+/* ── Volume + device rows ─────────────────────────────────────────── */
+.spotify-control-view .sc-volume-row,
+.spotify-control-view .sc-device-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.spotify-control-view .sc-vol-icon svg,
+.spotify-control-view .sc-dev-icon svg {
+	width: 14px;
+	height: 14px;
+	color: var(--text-muted);
+}
+.spotify-control-view .sc-volume {
+	flex: 1;
+	height: 3px;
+}
+
+/* ── Custom device dropdown ───────────────────────────────────────── */
+.spotify-control-view .sc-device-wrap {
+	flex: 1;
+	position: relative;
+}
+.spotify-control-view .sc-device-btn {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	border: none;
+	border-radius: var(--radius-s);
+	padding: 6px 8px;
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+	transition-property: box-shadow, background;
+	transition-duration: 120ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-device-btn:hover {
+	box-shadow: inset 0 0 0 1px var(--interactive-accent);
+}
+.spotify-control-view .sc-device-wrap.is-open .sc-device-btn {
+	box-shadow: inset 0 0 0 1px var(--interactive-accent);
+}
+.spotify-control-view .sc-device-label {
+	flex: 1;
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.spotify-control-view .sc-device-chevron {
+	display: flex;
+	align-items: center;
+	color: var(--text-muted);
+	transition-property: rotate;
+	transition-duration: 180ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-device-chevron svg {
+	width: 14px;
+	height: 14px;
+}
+.spotify-control-view .sc-device-wrap.is-open .sc-device-chevron {
+	rotate: 180deg;
+}
+.spotify-control-view .sc-device-popover {
+	position: absolute;
+	bottom: calc(100% + 4px);
+	left: 0;
+	right: 0;
+	background: var(--background-primary);
+	border-radius: var(--radius-m);
+	padding: 4px;
+	max-height: 240px;
+	overflow-y: auto;
+	box-shadow:
+		0 4px 12px rgba(0, 0, 0, 0.15),
+		0 1px 3px rgba(0, 0, 0, 0.1),
+		inset 0 0 0 1px var(--background-modifier-border);
+	z-index: 1000;
+	display: none;
+	transform-origin: bottom center;
+}
+.spotify-control-view .sc-device-wrap.is-open .sc-device-popover {
+	display: block;
+	animation: sc-popover-in 140ms cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes sc-popover-in {
+	from {
+		opacity: 0;
+		scale: 0.96;
+	}
+	to {
+		opacity: 1;
+		scale: 1;
+	}
+}
+.spotify-control-view .sc-device-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	background: transparent;
+	border: none;
+	border-radius: var(--radius-s);
+	padding: 6px 8px;
+	cursor: pointer;
+	text-align: left;
+	transition-property: background;
+	transition-duration: 100ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-device-item:hover {
+	background: var(--background-modifier-hover);
+}
+.spotify-control-view .sc-device-item.is-active {
+	background: var(--background-modifier-hover);
+}
+.spotify-control-view .sc-device-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--background-modifier-border);
+	flex-shrink: 0;
+}
+.spotify-control-view .sc-device-dot.is-active {
+	background: var(--color-green);
+	box-shadow: 0 0 8px rgba(80, 200, 120, 0.6);
+}
+.spotify-control-view .sc-device-item-label {
+	flex: 1;
+	min-width: 0;
+}
+.spotify-control-view .sc-device-item-name {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.spotify-control-view .sc-device-item-type {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	text-transform: capitalize;
+}
+.spotify-control-view .sc-device-empty {
+	padding: 12px;
+	text-align: center;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* ── Status ───────────────────────────────────────────────────────── */
+.spotify-control-view .sc-status {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	text-align: center;
+	padding-top: 6px;
+	font-variant-numeric: tabular-nums;
+	text-wrap: pretty;
+	min-height: 1em; /* keep layout stable even when empty */
+}
+/* Only show separator + padding when there's actual content. */
+.spotify-control-view .sc-status:not(:empty) {
+	box-shadow: 0 -1px 0 var(--background-modifier-border);
+}
+
+/* ── Search modal ─────────────────────────────────────────────────── */
+.sc-search-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 2px;
+}
+.sc-search-thumb {
+	width: 36px;
+	height: 36px;
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	object-fit: cover;
+	flex-shrink: 0;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.sc-search-thumb-placeholder {
+	display: block;
+}
+.sc-search-body {
+	flex: 1;
+	min-width: 0;
+}
+.sc-search-name {
+	font-weight: 500;
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sc-search-sub {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sc-search-kind {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	text-transform: uppercase;
+	padding: 2px 6px;
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	flex-shrink: 0;
+	font-variant-numeric: tabular-nums;
+}
+.sc-kind-track {
+	color: var(--color-blue);
+}
+.sc-kind-album {
+	color: var(--color-purple);
+}
+.sc-kind-playlist {
+	color: var(--color-green);
+}
+
+/* ── Settings ─────────────────────────────────────────────────────── */
+.sc-sdk-status {
+	margin-top: 8px;
+	padding: 10px 12px;
+	background: var(--background-secondary);
+	border-radius: var(--radius-s);
+	border-left: 3px solid var(--background-modifier-border);
+	font-size: var(--font-ui-small);
+}
+.sc-sdk-status.sc-state-ready {
+	border-left-color: var(--color-green);
+}
+.sc-sdk-status.sc-state-widevine-missing,
+.sc-sdk-status.sc-state-script-failed,
+.sc-sdk-status.sc-state-init-error,
+.sc-sdk-status.sc-state-auth-error {
+	border-left-color: var(--color-red);
+}
+.sc-sdk-status .sc-sdk-state {
+	font-weight: 600;
+	margin-bottom: 4px;
+	text-transform: capitalize;
+}
+.sc-sdk-status .sc-sdk-reason {
+	color: var(--text-muted);
+	line-height: 1.5;
+	text-wrap: pretty;
+}
+
+/* ── Narrow viewports ─────────────────────────────────────────────── */
+@media (max-width: 400px) {
+	.spotify-control-view {
+		padding: 8px 6px;
+		gap: 10px;
+	}
+	.spotify-control-view .sc-art-wrap {
+		max-width: 280px;
+		margin: 0 auto;
+	}
+	.spotify-control-view .sc-title {
+		font-size: var(--font-ui-medium);
+	}
+	.spotify-control-view .sc-play-main {
+		width: 48px;
+		height: 48px;
+	}
+	.spotify-control-view .sc-overlay-play {
+		width: 56px;
+		height: 56px;
+	}
+	.spotify-control-view .sc-btn {
+		padding: 8px;
+	}
+	.spotify-control-view .sc-btn::before {
+		width: 44px;
+		height: 44px;
+	}
+	.spotify-control-view .sc-seek,
+	.spotify-control-view .sc-volume {
+		height: 6px;
+	}
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Queue panel — shares container shape with lyrics, different content.
+ * ───────────────────────────────────────────────────────────────────── */
+.spotify-control-view .sc-queue-panel {
+	display: none;
+	position: relative;
+	background: var(--background-secondary);
+	border-radius: var(--radius-l);
+	overflow: hidden;
+	min-height: 0;
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+		0 2px 4px rgba(0, 0, 0, 0.08),
+		0 8px 24px rgba(0, 0, 0, 0.16);
+}
+.spotify-control-view.is-lyrics-replace .sc-art-stack .sc-queue-panel {
+	position: absolute;
+	inset: 0;
+}
+.spotify-control-view .sc-queue-scroll {
+	height: 100%;
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: 6px;
+	scrollbar-width: thin;
+}
+.spotify-control-view.is-lyrics-below .sc-queue-panel .sc-queue-scroll {
+	height: auto;
+}
+.spotify-control-view .sc-queue-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 6px 8px;
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	transition-property: background;
+	transition-duration: 100ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-queue-item:hover {
+	background: var(--background-modifier-hover);
+}
+.spotify-control-view .sc-queue-thumb {
+	width: 32px;
+	height: 32px;
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	object-fit: cover;
+	flex-shrink: 0;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.spotify-control-view .sc-queue-thumb-placeholder {
+	display: block;
+}
+.spotify-control-view .sc-queue-body {
+	flex: 1;
+	min-width: 0;
+}
+.spotify-control-view .sc-queue-name {
+	font-weight: 500;
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.spotify-control-view .sc-queue-sub {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.spotify-control-view .sc-queue-duration {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	flex-shrink: 0;
+}
+.spotify-control-view .sc-queue-status {
+	padding: 30% 16px;
+	text-align: center;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	text-wrap: pretty;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Generic .sc-panel base — both lyrics + queue share these.
+ * ───────────────────────────────────────────────────────────────────── */
+.spotify-control-view .sc-panel { /* shared base if needed */ }
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Overlay corner buttons (shuffle/repeat) — top corners of art-overlay
+ * when in hover mode. Different visual treatment than the white center
+ * buttons: more transparent so they read as secondary.
+ * ───────────────────────────────────────────────────────────────────── */
+.spotify-control-view .sc-overlay-top {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	display: flex;
+	justify-content: space-between;
+	padding: 10px;
+	pointer-events: none; /* container itself; buttons override */
+}
+.spotify-control-view .sc-overlay-center {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 14px;
+	width: 100%;
+	height: 100%;
+}
+/*
+ * Shared on-art secondary button base — used by corner buttons (shuffle,
+ * repeat), panel toggles (lyrics, queue), and the art-volume button. All
+ * three were previously slightly different (different border-radius,
+ * different active-state treatment). Unified so they read as one family.
+ *
+ * Active state shifts the ICON color to the accent (cleaner than swapping
+ * the whole background, which used to make active shuffle look totally
+ * different from inactive repeat).
+ */
+.spotify-control-view .sc-overlay-corner-btn,
+.spotify-control-view .sc-panel-toggle,
+.spotify-control-view .sc-art-volume-btn {
+	background: rgba(0, 0, 0, 0.55);
+	-webkit-backdrop-filter: blur(10px) saturate(140%);
+	backdrop-filter: blur(10px) saturate(140%);
+	border: none;
+	color: rgba(255, 255, 255, 0.92);
+	border-radius: 50%;
+	width: 32px;
+	height: 32px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+	transition-property: background, color, scale;
+	transition-duration: 140ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-overlay-corner-btn:hover,
+.spotify-control-view .sc-panel-toggle:hover,
+.spotify-control-view .sc-art-volume-btn:hover {
+	background: rgba(0, 0, 0, 0.7);
+	color: #fff;
+}
+.spotify-control-view .sc-overlay-corner-btn:active,
+.spotify-control-view .sc-panel-toggle:active,
+.spotify-control-view .sc-art-volume-btn:active {
+	scale: 0.94;
+}
+.spotify-control-view .sc-overlay-corner-btn svg,
+.spotify-control-view .sc-panel-toggle svg,
+.spotify-control-view .sc-art-volume-btn svg {
+	width: 16px;
+	height: 16px;
+}
+/* Active state: icon shifts to accent, background gets a slight pop.
+ * Subtler than the v0.4 full-background-swap which made active buttons
+ * look like a different control entirely. */
+.spotify-control-view .sc-overlay-corner-btn.is-active,
+.spotify-control-view .sc-panel-toggle.is-active {
+	background: rgba(0, 0, 0, 0.7);
+	color: var(--interactive-accent);
+}
+/* Specifics for the corner buttons */
+.spotify-control-view .sc-overlay-corner-btn {
+	pointer-events: auto;
+	position: relative;
+}
+.spotify-control-view .sc-overlay-corner-btn.is-repeat-one::after {
+	content: '';
+	position: absolute;
+	bottom: 4px;
+	left: 50%;
+	transform: translateX(-50%);
+	width: 3px;
+	height: 3px;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Panel-toggle cluster (top-right corner of art-stack) — lyrics + queue
+ * stacked vertically. Hover-only in hover mode; hidden entirely when
+ * the static-row copies are showing (always-visible mode).
+ * ───────────────────────────────────────────────────────────────────── */
+/*
+ * Bottom-left of art-stack — out of the way of the top-corner shuffle /
+ * repeat overlay buttons (top-left + top-right) and the bottom-right
+ * volume button. Horizontal layout so multiple toggles sit side-by-side.
+ * Bottom offset clears the optional progress-on-art bar.
+ */
+.spotify-control-view .sc-panel-toggles {
+	position: absolute;
+	bottom: 12px;
+	left: 8px;
+	z-index: 3;
+	display: flex;
+	flex-direction: row;
+	gap: 6px;
+	opacity: 0;
+	transition-property: opacity;
+	transition-duration: 160ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+	pointer-events: none;
+}
+/* Bump it a bit higher if the progress-on-art bar adds height. */
+.spotify-control-view.is-progress-on-art .sc-panel-toggles {
+	bottom: 16px;
+}
+/* In hover mode: reveal on art hover, or always when a panel is open
+ * (so the toggle stays clickable to switch back to art). */
+.spotify-control-view.is-hover-mode .sc-art-stack:hover .sc-panel-toggles,
+.spotify-control-view.is-hover-mode .sc-art-stack:focus-within .sc-panel-toggles,
+.spotify-control-view.is-hover-mode.is-panel-open .sc-panel-toggles {
+	opacity: 1;
+	pointer-events: auto;
+}
+/* In static (non-hover) mode: the corner cluster stays hidden; the
+ * static copies in the transport row are shown instead. */
+.spotify-control-view:not(.is-hover-mode) .sc-panel-toggles {
+	display: none;
+}
+/* Hide queue-toggle when feature disabled */
+.spotify-control-view:not(.is-queue-enabled) .sc-queue-toggle,
+.spotify-control-view:not(.is-queue-enabled) .sc-show-when-static.sc-queue-toggle-static {
+	display: none;
+}
+/* Hide lyrics-toggle when feature disabled */
+.spotify-control-view:not(.is-lyrics-enabled) .sc-lyrics-toggle,
+.spotify-control-view:not(.is-lyrics-enabled) .sc-show-when-static.sc-lyrics-toggle-static {
+	display: none;
+}
+
+/* .sc-panel-toggle visual rules consolidated into the shared on-art
+ * secondary-button block above. Only structural rules (positioning,
+ * visibility) remain in the .sc-panel-toggles cluster section. */
+
+/* Static (transport-row) copies of the toggles. Shown only when NOT in
+ * hover mode. The .sc-show-when-static class lets us flip visibility
+ * cleanly. */
+.spotify-control-view .sc-show-when-static {
+	display: none;
+}
+.spotify-control-view:not(.is-hover-mode) .sc-show-when-static {
+	display: flex;
+}
+/* In transport-row context the static buttons should also light up when active. */
+.spotify-control-view:not(.is-hover-mode) .sc-show-when-static.is-active {
+	color: var(--text-on-accent);
+	background: var(--interactive-accent);
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Art-progress bar (optional setting). Minimal line along the bottom
+ * edge of the art. Click to seek.
+ * ───────────────────────────────────────────────────────────────────── */
+.spotify-control-view .sc-art-progress {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 4px;
+	background: rgba(0, 0, 0, 0.45);
+	cursor: pointer;
+	z-index: 1;
+	transition-property: height;
+	transition-duration: 140ms;
+	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-art-progress:hover {
+	height: 7px;
+}
+.spotify-control-view .sc-art-progress-fill {
+	height: 100%;
+	width: 0%;
+	background: var(--interactive-accent);
+	box-shadow: 0 0 8px var(--interactive-accent);
+	transition-property: width;
+	transition-duration: 200ms;
+	transition-timing-function: linear;
+}
+/* When progress lives on art, hide the separate seek row below. */
+.spotify-control-view.is-progress-on-art .sc-seek-row {
+	display: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Art-volume button + vertical popover (optional setting).
+ * ───────────────────────────────────────────────────────────────────── */
+/* Positioning + reveal-on-hover only — visual rules come from the shared
+ * on-art secondary-button block above. */
+.spotify-control-view .sc-art-volume-btn {
+	position: absolute;
+	right: 8px;
+	bottom: 14px;
+	z-index: 2;
+	opacity: 0;
+	transition-property: opacity, background, scale;
+}
+.spotify-control-view.is-volume-on-art .sc-art-stack:hover .sc-art-volume-btn,
+.spotify-control-view.is-volume-on-art .sc-art-stack:focus-within .sc-art-volume-btn,
+.spotify-control-view.is-volume-on-art .sc-art-volume-popover.is-open ~ .sc-art-volume-btn,
+.spotify-control-view.is-volume-on-art .sc-art-volume-btn:focus {
+	opacity: 1;
+}
+
+.spotify-control-view .sc-art-volume-popover {
+	position: absolute;
+	right: 8px;
+	bottom: 52px; /* clear the volume button */
+	z-index: 3;
+	background: rgba(0, 0, 0, 0.85);
+	border-radius: var(--radius-m);
+	padding: 12px 8px;
+	display: none;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.spotify-control-view .sc-art-volume-popover.is-open {
+	display: flex;
+	flex-direction: column;
+	animation: sc-popover-in 140ms cubic-bezier(0.2, 0, 0, 1);
+}
+.spotify-control-view .sc-art-volume-slider {
+	/* Vertical slider via writing-mode trick. Works in Chromium. */
+	writing-mode: vertical-lr;
+	direction: rtl;
+	width: 4px;
+	height: 100px;
+	cursor: pointer;
+}
+
+/* When volume lives on art, hide the separate volume row below. */
+.spotify-control-view.is-volume-on-art .sc-volume-row {
+	display: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Below-mode panel flattening.
+ *
+ * When the lyrics/queue panel lives BELOW the art (not over it), the
+ * card aesthetic feels heavy — it's already inside the sidebar, doesn't
+ * need its own shadow + rounded corners + secondary background. Flatten
+ * it into the surrounding layout with a soft separator instead.
+ *
+ * In REPLACE mode (panel over art) the card styling still applies — it
+ * needs a solid background to mask the art behind it.
+ * ───────────────────────────────────────────────────────────────────── */
+.spotify-control-view.is-lyrics-below .sc-lyrics-panel,
+.spotify-control-view.is-lyrics-below .sc-queue-panel {
+	background: transparent;
+	border-radius: 0;
+	box-shadow: none;
+	margin-top: 4px;
+	padding-top: 8px;
+	/* Soft separator to delineate from the art above */
+	border-top: 1px solid var(--background-modifier-border);
+}
+/* Reduce inner padding too since we're not in a card anymore. */
+.spotify-control-view.is-lyrics-below .sc-lyrics-panel .sc-lyrics-scroll {
+	padding: 4px 4px 4px 2px;
+}
+.spotify-control-view.is-lyrics-below .sc-queue-panel .sc-queue-scroll {
+	padding: 4px 2px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Scrollbar styling — match Obsidian's theme.
+ *
+ * Webkit's default scrollbar is ugly + bright, and the `scrollbar-width:
+ * thin` we had before only narrowed it without restyling. Hook into the
+ * Obsidian theme vars so the scrollbar matches whatever theme the user
+ * has loaded (dark themes get dark scrollbars, light gets light, etc.).
+ * ───────────────────────────────────────────────────────────────────── */
+.spotify-control-view .sc-lyrics-scroll,
+.spotify-control-view .sc-queue-scroll,
+.spotify-control-view .sc-device-popover {
+	scrollbar-width: thin;
+	scrollbar-color: var(--scrollbar-thumb-bg) transparent;
+}
+.spotify-control-view .sc-lyrics-scroll::-webkit-scrollbar,
+.spotify-control-view .sc-queue-scroll::-webkit-scrollbar,
+.spotify-control-view .sc-device-popover::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+.spotify-control-view .sc-lyrics-scroll::-webkit-scrollbar-track,
+.spotify-control-view .sc-queue-scroll::-webkit-scrollbar-track,
+.spotify-control-view .sc-device-popover::-webkit-scrollbar-track {
+	background: transparent;
+}
+.spotify-control-view .sc-lyrics-scroll::-webkit-scrollbar-thumb,
+.spotify-control-view .sc-queue-scroll::-webkit-scrollbar-thumb,
+.spotify-control-view .sc-device-popover::-webkit-scrollbar-thumb {
+	background: var(--scrollbar-thumb-bg);
+	border-radius: 3px;
+	border: 1px solid transparent;
+	background-clip: padding-box;
+}
+.spotify-control-view .sc-lyrics-scroll::-webkit-scrollbar-thumb:hover,
+.spotify-control-view .sc-queue-scroll::-webkit-scrollbar-thumb:hover,
+.spotify-control-view .sc-device-popover::-webkit-scrollbar-thumb:hover {
+	background: var(--scrollbar-active-thumb-bg);
+}
+.spotify-control-view .sc-lyrics-scroll::-webkit-scrollbar-corner,
+.spotify-control-view .sc-queue-scroll::-webkit-scrollbar-corner,
+.spotify-control-view .sc-device-popover::-webkit-scrollbar-corner {
+	background: transparent;
+}
