@@ -75,8 +75,11 @@
 	background: var(--interactive-accent-hover);
 }
 .spotify-control-view .sc-empty-btn-secondary {
-	background: var(--background-modifier-border);
+	/* Use a proper surface color, not the border var — that one is
+	 * designed for thin dividers and renders too washed-out as a fill. */
+	background: var(--background-secondary);
 	color: var(--text-normal);
+	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
 }
 .spotify-control-view .sc-empty-btn-secondary:hover {
 	background: var(--background-modifier-hover);
@@ -121,9 +124,10 @@
 	background: var(--background-secondary);
 	border-radius: var(--radius-l);
 	overflow: hidden;
-	box-shadow:
-		0 2px 4px rgba(0, 0, 0, 0.08),
-		0 8px 24px rgba(0, 0, 0, 0.16);
+	/* --shadow-l adapts to theme: dark themes get a subtle dark shadow,
+	 * light themes get a deeper gray. Better than hardcoded black rgba
+	 * which is invisible against dark backgrounds. */
+	box-shadow: var(--shadow-l);
 	position: relative;
 }
 /* Hide album art only in REPLACE mode when lyrics are visible.
@@ -136,7 +140,9 @@
 	position: absolute;
 	inset: 0;
 	border-radius: var(--radius-l);
-	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+	/* Theme-aware rim. --background-modifier-border is dark on light
+	 * themes and light on dark themes, so the edge always reads. */
+	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
 	pointer-events: none;
 }
 .spotify-control-view .sc-art {
@@ -280,9 +286,8 @@
 	overflow: hidden;
 	min-height: 0;
 	box-shadow:
-		inset 0 0 0 1px rgba(255, 255, 255, 0.06),
-		0 2px 4px rgba(0, 0, 0, 0.08),
-		0 8px 24px rgba(0, 0, 0, 0.16);
+		inset 0 0 0 1px var(--background-modifier-border),
+		var(--shadow-l);
 }
 
 /* replace mode → panel absolutely covers the art stack */
@@ -523,9 +528,7 @@
 	border-radius: 50%;
 	width: 44px;
 	height: 44px;
-	box-shadow:
-		0 1px 2px rgba(0, 0, 0, 0.1),
-		0 4px 10px rgba(0, 0, 0, 0.1);
+	box-shadow: var(--shadow-s);
 	transition-property: color, background, scale, box-shadow;
 	transition-duration: 160ms;
 	transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
@@ -533,9 +536,7 @@
 .spotify-control-view .sc-play-main:hover {
 	background: var(--interactive-accent-hover);
 	color: var(--text-on-accent);
-	box-shadow:
-		0 1px 2px rgba(0, 0, 0, 0.12),
-		0 6px 16px rgba(0, 0, 0, 0.16);
+	box-shadow: var(--shadow-l);
 }
 .spotify-control-view .sc-play-main:active {
 	scale: 0.96;
@@ -659,8 +660,7 @@
 	max-height: 240px;
 	overflow-y: auto;
 	box-shadow:
-		0 4px 12px rgba(0, 0, 0, 0.15),
-		0 1px 3px rgba(0, 0, 0, 0.1),
+		var(--shadow-l),
 		inset 0 0 0 1px var(--background-modifier-border);
 	z-index: 1000;
 	display: none;
@@ -710,7 +710,9 @@
 }
 .spotify-control-view .sc-device-dot.is-active {
 	background: var(--color-green);
-	box-shadow: 0 0 8px rgba(80, 200, 120, 0.6);
+	/* Drop hardcoded green glow — looks off in themes that redefine
+	 * --color-green to something else (e.g. olive in some themes). */
+	box-shadow: 0 0 6px var(--color-green);
 }
 .spotify-control-view .sc-device-item-label {
 	flex: 1;
@@ -764,7 +766,7 @@
 	background: var(--background-secondary);
 	object-fit: cover;
 	flex-shrink: 0;
-	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
 }
 .sc-search-thumb-placeholder {
 	display: block;
@@ -881,9 +883,8 @@
 	overflow: hidden;
 	min-height: 0;
 	box-shadow:
-		inset 0 0 0 1px rgba(255, 255, 255, 0.06),
-		0 2px 4px rgba(0, 0, 0, 0.08),
-		0 8px 24px rgba(0, 0, 0, 0.16);
+		inset 0 0 0 1px var(--background-modifier-border),
+		var(--shadow-l);
 }
 .spotify-control-view.is-lyrics-replace .sc-art-stack .sc-queue-panel {
 	position: absolute;
@@ -923,7 +924,7 @@
 	background: var(--background-primary);
 	object-fit: cover;
 	flex-shrink: 0;
-	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
 }
 .spotify-control-view .sc-queue-thumb-placeholder {
 	display: block;
