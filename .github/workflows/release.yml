@@ -1,0 +1,81 @@
+name: Release
+
+# Build main.js + styles.css from source, generate GitHub artifact
+# attestations (signed provenance linking the binary to this commit), and
+# upload the attested artifacts plus manifest.json to the GitHub Release for
+# the pushed tag.
+#
+# The Obsidian plugin-directory review surfaces a Recommendation when release
+# assets lack attestations — this workflow clears it for every new tag.
+
+on:
+  push:
+    tags:
+      # Match any version-like tag the project has used so far (0.5.4, 1.0.0,
+      # v1.2.3). Plain numeric and v-prefixed both supported.
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write        # upload assets to the release
+  id-token: write        # required for sigstore attestation signing
+  attestations: write    # write GitHub attestation records
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify built tag matches manifest version
+        # Defensive: catch the case where someone tags a commit whose
+        # manifest.json version doesn't match the tag (a leftover from a
+        # botched release). Strips a leading `v` if present.
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          MANIFEST_VERSION=$(node -p "require('./manifest.json').version")
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match manifest version $MANIFEST_VERSION"
+            exit 1
+          fi
+
+      - name: Attest main.js
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: main.js
+
+      - name: Attest styles.css
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: styles.css
+
+      - name: Upload assets to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Create the release if it doesn't exist yet (handles the case
+          # where the tag was pushed without a pre-existing release entry).
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "Automated release for $GITHUB_REF_NAME."
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            main.js manifest.json styles.css \
+            --clobber
