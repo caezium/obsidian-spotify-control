@@ -1,6 +1,6 @@
 {
 	"name": "spotify-control",
-	"version": "0.5.2",
+	"version": "0.5.3",
 	"description": "Obsidian plugin: control Spotify without leaving Obsidian",
 	"main": "main.js",
 	"scripts": {
@@ -10,7 +10,6 @@
 	},
 	"devDependencies": {
 		"@types/node": "^20.19.41",
-		"builtin-modules": "^3.3.0",
 		"esbuild": "^0.20.0",
 		"obsidian": "^1.12.3",
 		"tslib": "^2.6.2",

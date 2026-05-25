@@ -1,10 +1,10 @@
 {
 	"id": "spotify-control",
 	"name": "Spotify Control",
-	"version": "0.5.2",
+	"version": "0.5.3",
 	"minAppVersion": "1.4.0",
-	"description": "Control Spotify from inside Obsidian. Now-playing sidebar with hover controls, time-synced lyrics via LRCLIB, upcoming-tracks queue, search, transport hotkeys, and insert-track-into-note. Display features work on Spotify Free; playback control requires Premium.",
+	"description": "Control Spotify from your notes. Now-playing sidebar with hover controls, time-synced lyrics via LRCLIB, upcoming-tracks queue, search, transport hotkeys, and insert-track-into-note. Display features work on Spotify Free; playback control requires Premium.",
 	"author": "caezium",
-	"authorUrl": "https://github.com/caezium/obsidian-spotify-control",
+	"authorUrl": "https://github.com/caezium",
 	"isDesktopOnly": false
 }

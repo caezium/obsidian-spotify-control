@@ -195,9 +195,11 @@
 .spotify-control-view:not(.is-hover-mode) .sc-art-overlay {
 	display: none;
 }
-/* In hover mode, hide the duplicate prev/play/next in the transport row. */
-.spotify-control-view.is-hover-mode .sc-hide-in-hover-mode {
-	display: none !important;
+/* In hover mode, hide the duplicate prev/play/next in the transport row.
+ * Double class selector bumps specificity above the buttons' own display rules
+ * (inline-flex on .clickable-icon etc.) without resorting to !important. */
+.spotify-control-view.is-hover-mode .sc-hide-in-hover-mode.sc-hide-in-hover-mode {
+	display: none;
 }
 
 /*
@@ -330,7 +332,6 @@
 	overflow-y: auto;
 	overflow-x: hidden; /* defeat occasional horizontal scrollbar */
 	padding: 12px 16px;
-	scrollbar-width: thin;
 	scroll-behavior: smooth;
 }
 /* In below mode the panel is flex-column; the scroll fills its parent. */
@@ -897,7 +898,6 @@
 	overflow-y: auto;
 	overflow-x: hidden;
 	padding: 6px;
-	scrollbar-width: thin;
 }
 .spotify-control-view.is-lyrics-below .sc-queue-panel .sc-queue-scroll {
 	height: auto;
@@ -1255,11 +1255,13 @@
  * Obsidian theme vars so the scrollbar matches whatever theme the user
  * has loaded (dark themes get dark scrollbars, light gets light, etc.).
  * ───────────────────────────────────────────────────────────────────── */
-.spotify-control-view .sc-lyrics-scroll,
-.spotify-control-view .sc-queue-scroll,
-.spotify-control-view .sc-device-popover {
-	scrollbar-width: thin;
-	scrollbar-color: var(--scrollbar-thumb-bg) transparent;
+@supports (scrollbar-width: thin) {
+	.spotify-control-view .sc-lyrics-scroll,
+	.spotify-control-view .sc-queue-scroll,
+	.spotify-control-view .sc-device-popover {
+		scrollbar-width: thin;
+		scrollbar-color: var(--scrollbar-thumb-bg) transparent;
+	}
 }
 .spotify-control-view .sc-lyrics-scroll::-webkit-scrollbar,
 .spotify-control-view .sc-queue-scroll::-webkit-scrollbar,
