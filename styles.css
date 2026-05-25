@@ -1250,19 +1250,12 @@
 /* ─────────────────────────────────────────────────────────────────────
  * Scrollbar styling — match Obsidian's theme.
  *
- * Webkit's default scrollbar is ugly + bright, and the `scrollbar-width:
- * thin` we had before only narrowed it without restyling. Hook into the
- * Obsidian theme vars so the scrollbar matches whatever theme the user
- * has loaded (dark themes get dark scrollbars, light gets light, etc.).
+ * Obsidian runs on Electron/Chromium so we style the scrollbar with the
+ * `::-webkit-scrollbar` pseudo-elements only. Earlier versions used the
+ * standardized `scrollbar-width`/`scrollbar-color` properties as well,
+ * but Obsidian's plugin-directory CSS lint flags them as only partially
+ * supported.
  * ───────────────────────────────────────────────────────────────────── */
-@supports (scrollbar-width: thin) {
-	.spotify-control-view .sc-lyrics-scroll,
-	.spotify-control-view .sc-queue-scroll,
-	.spotify-control-view .sc-device-popover {
-		scrollbar-width: thin;
-		scrollbar-color: var(--scrollbar-thumb-bg) transparent;
-	}
-}
 .spotify-control-view .sc-lyrics-scroll::-webkit-scrollbar,
 .spotify-control-view .sc-queue-scroll::-webkit-scrollbar,
 .spotify-control-view .sc-device-popover::-webkit-scrollbar {
