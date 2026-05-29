@@ -13,6 +13,7 @@
 
 import {
 	App,
+	Platform,
 	Plugin,
 	PluginSettingTab,
 	Setting,
@@ -243,6 +244,19 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 
 		this.renderSetupHelp(containerEl);
 
+		// Mobile is best-effort: the architecture is cross-platform but the
+		// plugin is primarily developed against desktop. Tell mobile users
+		// up front so they know to file issues if anything misbehaves.
+		if (Platform.isMobile) {
+			const mobileEl = containerEl.createDiv({ cls: 'setting-item-description' });
+			mobileEl.createEl('strong', { text: 'Mobile (preview): ' });
+			mobileEl.createSpan({
+				text:
+					'hover-only controls are disabled (no touch hover) and tokens are stored in plaintext (no OS keychain). ' +
+					'Please report any auth or layout issues on GitHub.',
+			});
+		}
+
 		// Encryption status indicator
 		const securityEl = containerEl.createDiv({ cls: 'setting-item-description' });
 		const secLine = securityEl.createDiv();
@@ -298,18 +312,23 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 		refreshAuthStatus();
 
 		// ── Hover-reveal controls ─────────────────────────────────────
-		new Setting(containerEl)
-			.setName('Reveal controls on album art hover')
-			.setDesc(
-				'When on, prev/play/next appear as a floating overlay when you hover the album art, and the duplicate transport buttons below the art are hidden. When off, those controls stay always-visible in the transport row.',
-			)
-			.addToggle((t) =>
-				t.setValue(this.plugin.settings.hoverRevealControls).onChange(async (v) => {
-					this.plugin.settings.hoverRevealControls = v;
-					await this.plugin.saveSettings();
-					this.plugin.notifyViewsSettingsChanged();
-				}),
-			);
+		// Hover-reveal is meaningless on touch screens — the overlay would
+		// be unreachable. Hide the setting on mobile entirely; the view also
+		// force-falls-back to the always-visible transport row there.
+		if (!Platform.isMobile) {
+			new Setting(containerEl)
+				.setName('Reveal controls on album art hover')
+				.setDesc(
+					'When on, prev/play/next appear as a floating overlay when you hover the album art, and the duplicate transport buttons below the art are hidden. When off, those controls stay always-visible in the transport row.',
+				)
+				.addToggle((t) =>
+					t.setValue(this.plugin.settings.hoverRevealControls).onChange(async (v) => {
+						this.plugin.settings.hoverRevealControls = v;
+						await this.plugin.saveSettings();
+						this.plugin.notifyViewsSettingsChanged();
+					}),
+				);
+		}
 
 		// ── Polling interval ──────────────────────────────────────────
 		new Setting(containerEl)

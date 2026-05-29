@@ -145,6 +145,16 @@ Optimizations:
 - Track changes trigger background prefetch of lyrics, queue, and upcoming-track album art
 - Bundle is 64 KB (no third-party SDK; direct `requestUrl` for both reads and writes)
 
+## Mobile (preview)
+
+The manifest declares mobile support (`isDesktopOnly: false`) and the architecture is cross-platform — all HTTP goes through Obsidian's `requestUrl`, OAuth uses the `obsidian://` callback that mobile Obsidian registers, and the sidebar `ItemView` opens in the mobile slide-over panel. But mobile is **best-effort and not yet validated end-to-end** — please file issues if anything misbehaves.
+
+Concrete differences on iOS / Android:
+
+- **Hover-reveal controls are force-disabled.** Touch has no hover, so the on-art overlay would be unreachable. The setting is hidden and the duplicate transport row below the art carries the controls.
+- **Tokens are stored in plaintext.** Mobile Obsidian doesn't expose Electron's `safeStorage`, so the encryption layer falls back to plaintext in `data.json`. The settings tab shows the `⚠️` indicator.
+- **OAuth flow** runs through the OS browser and returns via the `obsidian://spotify-control/auth` callback. Untested on iOS and Android in the current release — please report success/failure.
+
 ## What's intentionally missing
 
 **Smart Shuffle.** Spotify's "Smart Shuffle" mode is exposed only via their private API — the public Web API has no endpoint to read or toggle it. If you've enabled Smart Shuffle in the desktop app, it affects the queue order you receive, but this plugin can't read or change the state.

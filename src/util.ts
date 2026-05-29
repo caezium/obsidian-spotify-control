@@ -92,8 +92,7 @@ export function randomString(length: number): string {
 	// Generate in chunks. Most bytes are accepted; only ~22% rejected.
 	const buf = new Uint8Array(length * 2);
 	while (out.length < length) {
-		const cryptoObj =
-			typeof crypto !== 'undefined' ? crypto : (globalThis as any).crypto;
+		const cryptoObj = getCrypto();
 		cryptoObj.getRandomValues(buf);
 		for (let i = 0; i < buf.length && out.length < length; i++) {
 			if (buf[i] < acceptBelow) {
@@ -107,10 +106,31 @@ export function randomString(length: number): string {
 /** SHA-256 → base64url (RFC 4648 §5, no padding). */
 export async function sha256Base64Url(input: string): Promise<string> {
 	const data = new TextEncoder().encode(input);
-	const cryptoObj =
-		typeof crypto !== 'undefined' ? crypto : (globalThis as any).crypto;
+	const cryptoObj = getCrypto();
 	const hash = await cryptoObj.subtle.digest('SHA-256', data);
 	return base64UrlEncode(new Uint8Array(hash));
+}
+
+/**
+ * Get a Web Crypto-compatible object.
+ *
+ *   - Obsidian's Electron renderer always has `globalThis.crypto`.
+ *   - The Node 18 test runner doesn't (Web Crypto became a default global
+ *     in Node 19+). For that case we fall back to `node:crypto.webcrypto`,
+ *     which has the same shape.
+ *
+ * `node:crypto` is listed as `external` in esbuild.config.mjs so the bundler
+ * emits `require("node:crypto")` rather than trying to inline it. That call
+ * works in Node and in Electron's renderer; the fallback branch only
+ * executes when `globalThis.crypto` is missing.
+ */
+function getCrypto(): Crypto {
+	if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto?.subtle) {
+		return globalThis.crypto;
+	}
+	// eslint-disable-next-line @typescript-eslint/no-require-imports
+	const nodeCrypto = require('node:crypto') as { webcrypto: Crypto };
+	return nodeCrypto.webcrypto;
 }
 
 /** Bytes → base64url. */

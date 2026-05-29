@@ -26,7 +26,7 @@
  * 5th poll fetches devices, that's ~24 req/min, plenty of headroom.
  */
 
-import { ItemView, WorkspaceLeaf, setIcon, Notice } from 'obsidian';
+import { ItemView, Platform, WorkspaceLeaf, setIcon, Notice } from 'obsidian';
 import type SpotifyControlPlugin from './main';
 import { formatTime } from './util';
 import { activeLineIndex, LyricsResult, LYRICS_NONE } from './lyrics';
@@ -705,7 +705,11 @@ export class SpotifyView extends ItemView {
 	private applyHoverModeClass() {
 		if (!this.rootEl) return;
 		const s = this.plugin.settings;
-		this.rootEl.toggleClass('is-hover-mode', s.hoverRevealControls);
+		// Touch devices have no hover — the on-art overlay would be unreachable
+		// (no way to reveal prev/play/next). Force the class off on mobile
+		// regardless of the stored setting; the duplicate transport row below
+		// the art carries the controls.
+		this.rootEl.toggleClass('is-hover-mode', s.hoverRevealControls && !Platform.isMobile);
 		this.rootEl.toggleClass('is-lyrics-enabled', s.enableLyrics);
 		this.rootEl.toggleClass('is-queue-enabled', s.enableQueue);
 		this.rootEl.toggleClass('is-progress-on-art', s.progressOnArt);
