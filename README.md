@@ -34,6 +34,14 @@ Works on **Spotify Free** for display features (now-playing, lyrics, queue, sear
       <img src="https://github.com/user-attachments/assets/5fc06332-1604-47df-8e07-5e6d467d549b" width="200" />
     </td>
   </tr>
+  <tr> 
+    <td colspan="2" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/eacf5b3f-4b14-4d0b-b85a-ee75e91889e9" width="600" />
+    </td>
+    <td width="33%" align="center" valign="top">
+      <img src="https://github.com/user-attachments/assets/9d469f5d-1d8b-4b84-bfec-07280ef4a8f3" width="200" />
+    </td>
+  </tr>
 </table>
 
 
@@ -64,6 +72,16 @@ When a Spotify podcast episode is playing the sidebar adapts:
 - Search finds podcasts and individual episodes; insert-into-note has `{{show}}` and `{{publisher}}` template variables.
 
 **Not available** (Spotify Web API limitations, not a plugin design choice): transcripts, auto-generated chapters, variable playback speed (1×/1.5×/2×), and sleep timer. These are exposed only by Spotify's own clients via private endpoints we don't have access to. If you find yourself wanting them, use the Spotify app for the listening session itself; the sidebar still shows what's playing.
+
+## Mobile (preview)
+
+The plugin runs on Obsidian mobile (iOS + Android) with `isDesktopOnly: false`. It's tagged "preview" rather than full support because the development cycle is primarily desktop and not every interaction has been validated on a phone. Known differences from desktop:
+
+- **Hover-reveal controls are hidden in settings** and force-off in the sidebar. Touch screens have no hover, so the on-art overlay would be unreachable. The always-visible transport row carries the controls instead.
+- **Tokens are stored in plaintext** in `data.json`. Desktop uses Electron's `safeStorage` (OS keychain on macOS, libsecret on Linux, DPAPI on Windows), which doesn't exist on mobile. The plugin warns about this on first load and on the settings screen.
+- **OAuth flow** goes through Obsidian's `obsidian://spotify-control/auth` protocol handler, same as desktop — your phone's default browser opens Spotify's auth page, you approve, the redirect bounces back into Obsidian.
+
+If anything misbehaves on mobile (layout, auth callback, missing UI elements), please file an issue with your phone model + Obsidian version.
 
 ## Setup (one-time)
 
