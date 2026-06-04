@@ -53,6 +53,18 @@ Works on **Spotify Free** for display features (now-playing, lyrics, queue, sear
 
 **Open Spotify Web Player.** Command/setting to open `open.spotify.com` either in your external browser (audio works) or in an Obsidian tab (UI only — Obsidian's Electron build doesn't bundle Widevine DRM).
 
+## Podcast support
+
+When a Spotify podcast episode is playing the sidebar adapts:
+
+- Title → episode name; "artist" row → show name; "album" row → release date + remaining time (e.g., `Oct 24, 2025  •  50 min 44 sec left`).
+- Album art uses the episode image (falls back to show art).
+- Transport row reveals **−15s** and **+15s** seek buttons around prev/play/next.
+- Lyrics panel auto-opens with the episode description ("show notes") on each new episode. Click the lyrics toggle to close — it stays closed for the rest of that episode.
+- Search finds podcasts and individual episodes; insert-into-note has `{{show}}` and `{{publisher}}` template variables.
+
+**Not available** (Spotify Web API limitations, not a plugin design choice): transcripts, auto-generated chapters, variable playback speed (1×/1.5×/2×), and sleep timer. These are exposed only by Spotify's own clients via private endpoints we don't have access to. If you find yourself wanting them, use the Spotify app for the listening session itself; the sidebar still shows what's playing.
+
 ## Setup (one-time)
 
 1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and create an app. Name and description don't matter.

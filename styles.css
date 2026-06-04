@@ -1285,3 +1285,57 @@
 .spotify-control-view .sc-device-popover::-webkit-scrollbar-corner {
 	background: transparent;
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+ * PODCAST-AWARE CONTROLS
+ *
+ * Active when the root has `.is-episode` (set by render() when item is a
+ * Spotify podcast episode). Reveals -15s / +15s seek buttons, swaps the
+ * lyrics panel into a description-display, and tweaks the metadata row.
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/* -15s / +15s buttons are always in the DOM (so handlers register once)
+ * but hidden unless an episode is playing. */
+.spotify-control-view .sc-skip15 {
+	display: none;
+}
+.spotify-control-view.is-episode .sc-skip15 {
+	display: inline-flex;
+}
+
+/* Draw the "15" label on top of the rotate-ccw / rotate-cw icon so the
+ * button matches Spotify's 15s rewind/forward glyph. The icon's SVG fills
+ * the button; we use ::after positioned over it to add the small numeral. */
+.spotify-control-view .sc-skip15 {
+	position: relative;
+}
+.spotify-control-view .sc-skip15::after {
+	content: '15';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -45%);
+	font-size: 9px;
+	font-weight: 700;
+	color: currentColor;
+	pointer-events: none;
+}
+
+/* Episode description fills the lyrics scroll container when a podcast is
+ * playing and the lyrics panel is open. Preserves paragraph breaks Spotify
+ * embeds in descriptions; constrains line length for readability. */
+.spotify-control-view .sc-episode-description {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	line-height: 1.55;
+	white-space: pre-line;
+	overflow-wrap: break-word;
+	hyphens: auto;
+}
+
+/* In hover mode, the on-art overlay only has prev/play/next from the
+ * existing overlay structure. We don't add 15s buttons to the overlay —
+ * users can hit the duplicate copies in the transport row. (Adding them
+ * to the overlay would crowd the art and the user can still seek via the
+ * progress bar anyway.) */
+

@@ -62,6 +62,17 @@ interface PlaybackState {
 	deviceId: string | null;
 	deviceName: string | null;
 	hasActiveDevice: boolean;
+	/** True when the current item is a Spotify podcast episode. Drives the
+	 * "is-episode" class on the root, which CSS uses to reveal the -15s/+15s
+	 * buttons and the description panel in place of "no lyrics" placeholder. */
+	isEpisode: boolean;
+	/** Episode description (formatted plain text with paragraph breaks).
+	 * Empty for tracks. Sourced from `html_description` when available so
+	 * paragraph structure survives — Spotify's plain `description` field
+	 * strips the line breaks. */
+	episodeDescription: string;
+	/** ISO date "YYYY-MM-DD" for the album row replacement on podcasts. */
+	episodeReleaseDate: string;
 }
 
 interface Device {
@@ -88,6 +99,9 @@ const EMPTY_STATE: PlaybackState = {
 	deviceId: null,
 	deviceName: null,
 	hasActiveDevice: false,
+	isEpisode: false,
+	episodeDescription: '',
+	episodeReleaseDate: '',
 };
 
 export class SpotifyView extends ItemView {
@@ -130,6 +144,11 @@ export class SpotifyView extends ItemView {
 	private nextBtn!: HTMLButtonElement;
 	private shuffleBtn!: HTMLButtonElement;
 	private repeatBtn!: HTMLButtonElement;
+	/** Podcast-only: -15s / +15s seek buttons. Created always; CSS hides them
+	 * when the root lacks .is-episode. Click handler seeks ±15000 ms within
+	 * the current item rather than skipping to a different track. */
+	private skipBack15Btn!: HTMLButtonElement;
+	private skipForward15Btn!: HTMLButtonElement;
 	private seekBar!: HTMLInputElement;
 	private elapsedEl!: HTMLSpanElement;
 	private totalEl!: HTMLSpanElement;
@@ -412,6 +431,18 @@ export class SpotifyView extends ItemView {
 			this.callDirect(() => this.plugin.api.shuffle(!this.lastState.shuffle), 'shuffle'),
 		);
 		this.shuffleBtn.addClass('sc-hide-in-hover-mode');
+		// Podcast-only -15s. Sits before prev (outside the prev/next bracket);
+		// CSS reveals it via .is-episode. The 'rotate-ccw' icon is the curved
+		// arrow that matches Spotify's 15s rewind glyph; CSS draws the "15"
+		// label on top.
+		// NOTE: Intentionally *not* tagged sc-hide-in-hover-mode — the 15s
+		// skip buttons should appear in the transport row whether hover-mode
+		// is on or off; they're podcast-specific controls, orthogonal to the
+		// classic hover-overlay vs always-visible distinction.
+		this.skipBack15Btn = this.iconButton(this.transportRowEl, 'rotate-ccw', '−15 seconds', () =>
+			this.seekBy(-15000),
+		);
+		this.skipBack15Btn.addClasses(['sc-skip15', 'sc-skip15-back']);
 		this.prevBtn = this.iconButton(this.transportRowEl, 'skip-back', 'Previous', () =>
 			this.callDirect(() => this.plugin.api.previous(), 'prev'),
 		);
@@ -422,6 +453,12 @@ export class SpotifyView extends ItemView {
 			this.callDirect(() => this.plugin.api.next(), 'next'),
 		);
 		this.nextBtn.addClass('sc-hide-in-hover-mode');
+		// Podcast-only +15s. Mirror of skipBack15Btn, sits after next. Same
+		// "no sc-hide-in-hover-mode" reasoning as the -15s sibling above.
+		this.skipForward15Btn = this.iconButton(this.transportRowEl, 'rotate-cw', '+15 seconds', () =>
+			this.seekBy(15000),
+		);
+		this.skipForward15Btn.addClasses(['sc-skip15', 'sc-skip15-forward']);
 		this.repeatBtn = this.iconButton(this.transportRowEl, 'repeat', 'Repeat', () => {
 			const order = ['off', 'context', 'track'] as const;
 			const idx = order.indexOf(this.lastState.repeat);
@@ -922,6 +959,19 @@ export class SpotifyView extends ItemView {
 				return;
 			}
 			const item = playback.item as any;
+			// Episode detection — three independent signals, any one is sufficient:
+			//   1. `currently_playing_type` on the response root (authoritative;
+			//      set by Spotify regardless of additional_types)
+			//   2. `item.type === 'episode'` (on the item itself when
+			//      additional_types=episode was honored)
+			//   3. URI prefix / show field on item (defensive fallbacks)
+			// Using all three so a single missing field doesn't break detection.
+			const cpt = (playback as any).currently_playing_type;
+			const isEpisode =
+				cpt === 'episode' ||
+				item?.type === 'episode' ||
+				item?.uri?.startsWith?.('spotify:episode:') === true ||
+				!!item?.show;
 			const state: PlaybackState = {
 				isPlaying: playback.is_playing,
 				trackName: item?.name ?? '',
@@ -941,6 +991,11 @@ export class SpotifyView extends ItemView {
 				deviceId: playback.device.id,
 				deviceName: playback.device.name,
 				hasActiveDevice: true,
+				isEpisode,
+				episodeDescription: isEpisode
+					? htmlDescriptionToText(item?.html_description) || item?.description || ''
+					: '',
+				episodeReleaseDate: isEpisode ? (item?.release_date ?? '') : '',
 			};
 			const prevTrackUri = this.lastState.trackUri;
 			this.render(state, true, true);
@@ -1028,9 +1083,26 @@ export class SpotifyView extends ItemView {
 			this.artistEl.setText(state.artist);
 			prev.artist = state.artist;
 		}
-		if (prev.album !== state.album) {
-			this.albumEl.setText(state.album);
-			prev.album = state.album;
+		// Album row formatting:
+		//   - Tracks: album name (e.g., "Random Access Memories")
+		//   - Episodes: "Oct 24, 2025  •  50 min 44 sec left" so the row
+		//     surfaces the date + how much of the episode is left, which is
+		//     what listeners actually want to see (rather than the publisher
+		//     name, which is just a corporate label).
+		const albumText = state.isEpisode
+			? formatEpisodeMeta(state.episodeReleaseDate, state.progressMs, state.durationMs)
+			: state.album;
+		if (prev.album !== albumText) {
+			this.albumEl.setText(albumText);
+			prev.album = albumText;
+		}
+		// Toggle the .is-episode class so CSS can swap the 15s skip buttons in
+		// (and the description panel takes over the lyrics slot).
+		this.rootEl.toggleClass('is-episode', state.isEpisode);
+		// When transitioning out of an episode, clear the cached description
+		// so the next episode (or the no-podcast placeholder) repaints.
+		if (!state.isEpisode && this.lastRenderedEpisodeDesc !== null) {
+			this.lastRenderedEpisodeDesc = null;
 		}
 		const clickable = !!state.trackUrl;
 		if (prev.titleClickable !== clickable) {
@@ -1216,6 +1288,22 @@ export class SpotifyView extends ItemView {
 					this.artProgressFillEl.style.width = `${pct}%`;
 				}
 			}
+			// Episode metadata row ("X min Y sec left") needs to tick with the
+			// local timer too — otherwise "left" only updates every 3 seconds
+			// at poll cadence, which feels stuck. Re-render only when the
+			// formatted text actually changes (i.e., when the seconds-bucket
+			// crosses), so we're not setText-ing an unchanged string at 2Hz.
+			if (this.lastState.isEpisode) {
+				const meta = formatEpisodeMeta(
+					this.lastState.episodeReleaseDate,
+					ms,
+					this.lastState.durationMs,
+				);
+				if (this.lastRendered.album !== meta) {
+					this.albumEl.setText(meta);
+					this.lastRendered.album = meta;
+				}
+			}
 			// Sync lyrics highlight to the same tick.
 			if (this.currentPanel === 'lyrics' && this.lyricsData.kind === 'synced') {
 				this.updateActiveLyric(ms);
@@ -1300,7 +1388,16 @@ export class SpotifyView extends ItemView {
 		this.currentPanel = next;
 		this.applyPanelClasses();
 		if (next === 'lyrics' && this.lastState.trackUri) {
-			this.fetchAndRenderLyrics(this.lastState);
+			// Episode-aware routing. LRCLIB is music-only, so calling
+			// fetchAndRenderLyrics for a podcast both wastes an HTTP and
+			// races against the synchronous renderLyricsForEpisode below
+			// (the async "no lyrics found" wins and overwrites the
+			// description).
+			if (this.lastState.isEpisode) {
+				this.renderLyricsForEpisode();
+			} else {
+				this.fetchAndRenderLyrics(this.lastState);
+			}
 		} else if (next === 'queue') {
 			this.fetchAndRenderQueue();
 		}
@@ -1406,8 +1503,30 @@ export class SpotifyView extends ItemView {
 		// rendered in <img> but other surfaces (queue thumbnails) benefit.
 		if (state.albumArtUrl) preloadImage(state.albumArtUrl);
 
+		// 0.5. Auto-open the lyrics panel for podcast episodes so the
+		// description is visible without an extra click. Conditions:
+		//   - Lyrics feature enabled (we reuse the lyrics panel slot for
+		//     show notes; if the feature is off there's no panel to open)
+		//   - The user hasn't manually opened a different panel (queue) —
+		//     respect their context. We only auto-take-over the closed/
+		//     "art" state, never override an intentional choice.
+		// Fires once per track-uri change, so closing the panel and leaving
+		// it closed stays closed for the rest of the episode. The next
+		// episode resets the cycle.
+		if (
+			state.isEpisode &&
+			this.plugin.settings.enableLyrics &&
+			this.currentPanel === 'art'
+		) {
+			this.setCurrentPanel('lyrics');
+		}
+
 		// 1. Lyrics: render if panel is open, otherwise just warm the cache.
-		if (this.plugin.settings.enableLyrics && state.trackUri) {
+		// Skip podcasts entirely — episodes never have LRCLIB entries, so
+		// firing the request is a guaranteed 404 (and the panel showing stale
+		// lyrics from the previous song would be misleading).
+		const isTrack = state.trackUri.startsWith('spotify:track:');
+		if (this.plugin.settings.enableLyrics && state.trackUri && isTrack) {
 			if (this.currentPanel === 'lyrics') {
 				this.fetchAndRenderLyrics(state);
 			} else {
@@ -1423,6 +1542,14 @@ export class SpotifyView extends ItemView {
 						console.warn('[spotify-control] lyrics prefetch failed', e);
 					});
 			}
+		} else if (
+			this.plugin.settings.enableLyrics &&
+			!isTrack &&
+			this.currentPanel === 'lyrics'
+		) {
+			// Episode playing and panel was open — replace the stale-from-last-
+			// track lyrics with an explicit empty state.
+			this.renderLyricsForEpisode();
 		}
 
 		// 2. Queue: background refresh so next panel-open is instant.
@@ -1485,6 +1612,43 @@ export class SpotifyView extends ItemView {
 		this.lyricsLineEls = [];
 		this.lyricsActiveIdx = -1;
 	}
+
+	/**
+	 * "No lyrics for podcasts" placeholder. Shown when the lyrics panel is
+	 * open and the user switches to / starts a podcast episode, so the panel
+	 * doesn't keep displaying the previous track's lyrics.
+	 */
+	/**
+	 * Render the episode description in the lyrics panel slot (when an
+	 * episode is playing). If the description is empty or unavailable,
+	 * falls back to the original "no lyrics" placeholder.
+	 *
+	 * Tracks the last-rendered description so re-renders inside the same
+	 * episode don't re-paint the DOM every poll (descriptions can be 500+
+	 * chars; repainting at 20Hz would be wasteful).
+	 */
+	private renderLyricsForEpisode() {
+		const desc = this.lastState.episodeDescription;
+		if (this.lastRenderedEpisodeDesc === desc) return;
+		this.lastRenderedEpisodeDesc = desc;
+		this.lyricsScrollEl.empty();
+		this.lyricsLineEls = [];
+		this.lyricsActiveIdx = -1;
+		if (!desc) {
+			this.lyricsScrollEl.createDiv({
+				cls: 'sc-lyrics-status',
+				text: '🎙️ No lyrics for podcasts.',
+			});
+			return;
+		}
+		// Render as a single block of text in the same scroll container as
+		// lyrics. Whitespace-pre-line preserves the paragraph breaks Spotify
+		// puts in description text.
+		const box = this.lyricsScrollEl.createDiv({ cls: 'sc-episode-description' });
+		box.setText(desc);
+	}
+
+	private lastRenderedEpisodeDesc: string | null = null;
 
 	private renderLyricsContent() {
 		this.lyricsScrollEl.empty();
@@ -1569,6 +1733,22 @@ export class SpotifyView extends ItemView {
 		}
 	}
 
+	/**
+	 * Seek relative to the current position. Used by the podcast -15s / +15s
+	 * buttons. Clamps to [0, duration] so the API doesn't reject an out-of-
+	 * range request. Holds the seek-grace window like the slider does so the
+	 * next poll doesn't briefly snap the progress bar back to the pre-seek
+	 * position before the local-progress timer catches up.
+	 */
+	private async seekBy(deltaMs: number) {
+		const dur = this.lastState.durationMs;
+		if (!dur) return;
+		const next = Math.max(0, Math.min(dur, this.lastState.progressMs + deltaMs));
+		this.holdSeekGrace();
+		await this.callDirect(() => this.plugin.api.seek(next), 'seek');
+		this.startLocalProgress(next);
+	}
+
 	// ── Slider grace timers ────────────────────────────────────────────────
 
 	private holdSeekGrace() {
@@ -1602,6 +1782,89 @@ export class SpotifyView extends ItemView {
  * In-flight dedupe + browser-level caching mean calling this with the same
  * URL multiple times is free.
  */
+/**
+ * Convert Spotify's `html_description` to plain text with paragraph
+ * breaks preserved. Spotify's HTML descriptions use `<p>`, `<br>`, `<a>`,
+ * `<em>`, `<strong>` mostly; we strip all tags but turn block-level
+ * structure into `\n` characters. The lyrics-panel scroll container uses
+ * `white-space: pre-line` to render the `\n`s as actual breaks.
+ *
+ * Avoids rendering raw HTML (XSS surface) and avoids pulling in a DOM
+ * parser — a small regex pipeline is enough since we control the
+ * markup vocabulary (it's a known set from Spotify's API).
+ *
+ * Returns empty string for empty/missing input. The caller falls back to
+ * the plain `description` field in that case.
+ */
+function htmlDescriptionToText(html: string | undefined): string {
+	if (!html) return '';
+	let s = html
+		// Block-level structure → newlines.
+		.replace(/<br\s*\/?>/gi, '\n')
+		.replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
+		.replace(/<\/p>/gi, '\n\n')
+		.replace(/<p[^>]*>/gi, '')
+		// Strip every remaining tag.
+		.replace(/<[^>]+>/g, '')
+		// Decode the handful of HTML entities Spotify actually uses.
+		.replace(/&nbsp;/g, ' ')
+		.replace(/&amp;/g, '&')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/&apos;/g, "'");
+	// Collapse 3+ consecutive newlines (from nested tags) down to 2.
+	s = s.replace(/\n{3,}/g, '\n\n');
+	return s.trim();
+}
+
+/**
+ * Format the metadata row for a podcast episode: "Oct 24, 2025  •  50 min
+ * 44 sec left". Either half may be omitted if its source data is missing
+ * (no release date, or live/unknown-length stream).
+ */
+function formatEpisodeMeta(
+	releaseDateIso: string,
+	progressMs: number,
+	durationMs: number,
+): string {
+	const parts: string[] = [];
+	const date = formatReleaseDate(releaseDateIso);
+	if (date) parts.push(date);
+	const remaining = Math.max(0, durationMs - progressMs);
+	if (durationMs > 0) parts.push(`${formatLongDuration(remaining)} left`);
+	return parts.join('  •  ');
+}
+
+/** ISO date "2025-10-24" → "Oct 24, 2025". Returns the input unchanged
+ * (or '' for empty) if it doesn't match the expected shape. */
+function formatReleaseDate(iso: string): string {
+	if (!iso) return '';
+	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+	if (!m) return iso;
+	const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+	const month = months[parseInt(m[2], 10) - 1] ?? '';
+	const day = parseInt(m[3], 10);
+	return `${month} ${day}, ${m[1]}`;
+}
+
+/** Verbose-format a duration for the episode metadata row.
+ *   3661000 → "1 hr 1 min"
+ *    61000  → "1 min 1 sec"
+ *     500   → "0 sec"
+ * Skips sub-units that are zero. Used for "X left" display where the
+ * familiar conversational format is more readable than "61:01". */
+function formatLongDuration(ms: number): string {
+	const totalSec = Math.max(0, Math.floor(ms / 1000));
+	const h = Math.floor(totalSec / 3600);
+	const m = Math.floor((totalSec % 3600) / 60);
+	const s = totalSec % 60;
+	if (h > 0) return `${h} hr ${m} min`;
+	if (m > 0) return `${m} min ${s} sec`;
+	return `${s} sec`;
+}
+
 const _preloadedUrls = new Set<string>();
 function preloadImage(url: string): void {
 	if (_preloadedUrls.has(url)) return;
@@ -1615,3 +1878,4 @@ function preloadImage(url: string): void {
 	img.decoding = 'async';
 	img.src = url;
 }
+

@@ -3,8 +3,10 @@
  *
  * Uses Obsidian's SuggestModal so it feels like the command palette.
  * Debounces input by 250ms to avoid hammering /search.
- * Results mix tracks + albums + playlists; selecting prompts play-now vs add-to-queue
- * (for tracks). Albums/playlists always "play now" (start context).
+ * Results mix tracks + albums + playlists + episodes + shows. Selecting
+ * prompts play-now vs add-to-queue for items that play as a single URI
+ * (tracks, episodes). Items that play as contexts (albums, playlists,
+ * shows) always "play now".
  *
  * Reads use the SDK (returns proper JSON). Writes (play, queue) go through
  * plugin.api to avoid the SDK's 204 deserialize bug.
@@ -13,7 +15,22 @@
 import { App, Modal, Notice, SuggestModal, Setting } from 'obsidian';
 import type SpotifyControlPlugin from './main';
 
-type Kind = 'track' | 'album' | 'playlist';
+type Kind = 'track' | 'album' | 'playlist' | 'episode' | 'show';
+
+/**
+ * How an item is played by Spotify's API.
+ *   - "uri" → POST /play with `uris: [uri]` (single item; supports queue)
+ *   - "context" → POST /play with `context_uri: uri` (starts a collection)
+ */
+type PlayShape = 'uri' | 'context';
+
+const PLAY_SHAPE: Record<Kind, PlayShape> = {
+	track: 'uri',
+	episode: 'uri',
+	album: 'context',
+	playlist: 'context',
+	show: 'context',
+};
 
 interface Result {
 	kind: Kind;
@@ -32,7 +49,7 @@ export class SpotifySearchModal extends SuggestModal<Result> {
 	constructor(app: App, plugin: SpotifyControlPlugin) {
 		super(app);
 		this.plugin = plugin;
-		this.setPlaceholder('Search Spotify — tracks, albums, playlists…');
+		this.setPlaceholder('Search Spotify — tracks, albums, playlists, podcasts…');
 		this.emptyStateText = 'No results.';
 	}
 
@@ -58,7 +75,11 @@ export class SpotifySearchModal extends SuggestModal<Result> {
 					return;
 				}
 				try {
-					const r = await this.plugin.api.search(query, ['track', 'album', 'playlist'], 6);
+					const r = await this.plugin.api.search(
+						query,
+						['track', 'album', 'playlist', 'episode', 'show'],
+						5,
+					);
 					// Generation check AFTER await — a newer query may have
 					// fired while we waited for the API. Discard stale results.
 					if (myGen !== this.queryGeneration) {
@@ -97,6 +118,33 @@ export class SpotifySearchModal extends SuggestModal<Result> {
 							imageUrl: p.images?.[0]?.url ?? null,
 						});
 					}
+					for (const e of r.episodes?.items ?? []) {
+						// Same null-entry guard — Spotify includes nulls for
+						// region-blocked or removed episodes/shows.
+						if (!e) continue;
+						const desc = e.description?.trim();
+						results.push({
+							kind: 'episode',
+							name: e.name,
+							subtitle: desc
+								? `Episode — ${truncate(desc, 80)}`
+								: 'Episode',
+							uri: e.uri,
+							imageUrl: e.images?.[0]?.url ?? null,
+						});
+					}
+					for (const s of r.shows?.items ?? []) {
+						if (!s) continue;
+						results.push({
+							kind: 'show',
+							name: s.name,
+							subtitle: s.publisher
+								? `Podcast — ${s.publisher}`
+								: 'Podcast',
+							uri: s.uri,
+							imageUrl: s.images?.[0]?.url ?? null,
+						});
+					}
 					resolve(results);
 				} catch (e: any) {
 					console.error('[spotify-control] search failed', e);
@@ -124,8 +172,10 @@ export class SpotifySearchModal extends SuggestModal<Result> {
 
 	async onChooseSuggestion(item: Result): Promise<void> {
 		if (!this.plugin.settings.tokens) return;
-		// Tracks: ask play-now vs add-to-queue. Albums/playlists: always play-now context.
-		if (item.kind === 'track') {
+		// Items that play as a single URI (tracks, episodes) get the
+		// play-now-vs-add-to-queue prompt. Items that play as a context
+		// (albums, playlists, shows) just play now.
+		if (PLAY_SHAPE[item.kind] === 'uri') {
 			new TrackActionModal(this.app, item, this.plugin).open();
 		} else {
 			try {
@@ -136,6 +186,12 @@ export class SpotifySearchModal extends SuggestModal<Result> {
 			}
 		}
 	}
+}
+
+/** Tight ellipsis truncation for episode descriptions. */
+function truncate(s: string, max: number): string {
+	if (s.length <= max) return s;
+	return s.slice(0, max - 1).trimEnd() + '…';
 }
 
 class TrackActionModal extends Modal {

@@ -171,10 +171,24 @@ export function registerCommands(plugin: SpotifyControlPlugin) {
 					new Notice('Nothing is playing.');
 					return;
 				}
+				// For podcast episodes:
+				//   - {{artist}} falls back to the show name
+				//   - {{album}} falls back to the publisher
+				//   - {{show}} and {{publisher}} are also available explicitly
+				// so users can author episode-aware templates without losing
+				// the simple track-only case.
+				const isEpisode = item.type === 'episode' || !!item.show;
+				const showName = item.show?.name ?? '';
+				const publisher = item.show?.publisher ?? '';
+				const artistName =
+					item.artists?.map((a: any) => a.name).join(', ') ?? (isEpisode ? showName : '');
+				const albumName = item.album?.name ?? (isEpisode ? publisher : '');
 				const text = renderTemplate(plugin.settings.insertTemplate, {
 					name: item.name,
-					artist: item.artists?.map((a: any) => a.name).join(', '),
-					album: item.album?.name,
+					artist: artistName,
+					album: albumName,
+					show: showName,
+					publisher,
 					url: item.external_urls?.spotify,
 					uri: item.uri,
 				});

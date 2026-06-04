@@ -351,7 +351,7 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('Insert-now-playing template')
 			.setDesc(
-				'Template for the "Insert now-playing into note" command. Variables: {{name}} {{artist}} {{album}} {{url}} {{uri}}',
+				'Template for the "Insert now-playing into note" command. Variables: {{name}} {{artist}} {{album}} {{url}} {{uri}}. For podcasts: {{show}} {{publisher}} are also available; {{artist}} falls back to the show name and {{album}} to the publisher.',
 			)
 			.addTextArea((t) => {
 				t.inputEl.rows = 4;

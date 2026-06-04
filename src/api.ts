@@ -54,6 +54,17 @@ export interface SpotifyEpisode {
 	images?: SpotifyImage[];
 	show?: { name: string; publisher: string };
 	external_urls?: { spotify?: string };
+	/** Plain-text description. Spotify strips paragraph breaks from this
+	 * field — for a readable rendering use `html_description` instead. */
+	description?: string;
+	/** Same description with `<p>`, `<br>`, `<a>` etc. tags intact. This is
+	 * what the official Spotify clients use to render show notes; we
+	 * convert it to plain text + newlines for display in the lyrics panel
+	 * slot. (Raw HTML would be an XSS surface; we only extract structure.) */
+	html_description?: string;
+	/** ISO date "YYYY-MM-DD". Used in the metadata row in place of the
+	 * album name for podcasts. */
+	release_date?: string;
 }
 
 export interface SpotifyDevice {
@@ -72,6 +83,12 @@ export interface SpotifyPlaybackState {
 	shuffle_state: boolean;
 	repeat_state: 'off' | 'context' | 'track';
 	context: { uri: string; type: string } | null;
+	/** Authoritative item-type field on the playback root. Use this in
+	 * preference to URI prefix sniffing when distinguishing episodes from
+	 * tracks — Spotify only populates `item` correctly when our request
+	 * includes `additional_types=episode`, but `currently_playing_type`
+	 * is set regardless. */
+	currently_playing_type?: 'track' | 'episode' | 'ad' | 'unknown';
 }
 
 export interface SpotifyDevicesResponse {
@@ -85,10 +102,31 @@ export interface SpotifyPlaylist {
 	owner: { display_name?: string };
 }
 
+/** Search response shape for episodes — distinct from playback's SpotifyEpisode
+ * because search results don't nest the show object (it's a sibling of the
+ * episode in the response). `description` doubles as a useful subtitle. */
+export interface SpotifyEpisodeSearchItem {
+	name: string;
+	uri: string;
+	images?: SpotifyImage[];
+	description?: string;
+	duration_ms?: number;
+}
+
+export interface SpotifyShowSearchItem {
+	name: string;
+	uri: string;
+	images?: SpotifyImage[];
+	publisher?: string;
+	description?: string;
+}
+
 export interface SpotifySearchResponse {
 	tracks?: { items: SpotifyTrack[] };
 	albums?: { items: SpotifyAlbum[] };
 	playlists?: { items: (SpotifyPlaylist | null)[] };
+	episodes?: { items: (SpotifyEpisodeSearchItem | null)[] };
+	shows?: { items: (SpotifyShowSearchItem | null)[] };
 }
 
 export interface SpotifyUserProfile {
@@ -213,9 +251,18 @@ export class SpotifyDirectApi {
 	// directly via requestUrl for consistency + smaller bundle. Each method
 	// is a one-line wrapper that types the response shape.
 
-	/** GET /me/player — current playback state, or null if nothing is active. */
+	/** GET /me/player — current playback state, or null if nothing is active.
+	 *
+	 * `additional_types=episode` is required for Spotify to include podcast
+	 * episode data in the `item` field. Without it, episodes come back as
+	 * `item: null` and the entire sidebar render chain blanks out when the
+	 * user is listening to a podcast. */
 	async getPlaybackState(): Promise<SpotifyPlaybackState | null> {
-		const r = await this.request({ method: 'GET', path: '/me/player' });
+		const r = await this.request({
+			method: 'GET',
+			path: '/me/player',
+			query: { additional_types: 'episode' },
+		});
 		return r as SpotifyPlaybackState | null;
 	}
 
