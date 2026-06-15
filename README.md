@@ -1,5 +1,7 @@
 # Spotify Control
 
+<img src="https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%23483699&label=downloads&query=%24%5B%22spotify-control%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json&style=for-the-badge" alt="Obsidian Downloads">
+
 Control Spotify from inside Obsidian. A now-playing sidebar with hover-revealed transport, time-synced lyrics, upcoming-tracks queue, search palette, hotkey-bindable transport commands, and "insert track into note."
 
 Works on **Spotify Free** for display features (now-playing, lyrics, queue, search, insert-into-note). **Premium** is required for playback control (play/pause/skip/seek/shuffle/repeat/volume) — that's a Spotify Web API restriction, not a plugin limitation. Free users get a clear "Premium required" message instead of silent failures when they try restricted actions.
