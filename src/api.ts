@@ -492,12 +492,7 @@ function parseResponseBody(resp: RequestUrlResponse): unknown {
 }
 
 function throwSpotifyError(resp: RequestUrlResponse): never {
-	let parsed: { error?: { status?: number; message?: string; reason?: string } } = {};
-	try {
-		parsed = JSON.parse(resp.text ?? '');
-	} catch {
-		/* non-JSON error body, fall through */
-	}
+	const parsed = parseSpotifyErrorBody(resp.text);
 	const err: SpotifyError & Error = Object.assign(
 		new Error(parsed.error?.message ?? `Spotify ${resp.status}`),
 		{
@@ -510,7 +505,37 @@ function throwSpotifyError(resp: RequestUrlResponse): never {
 }
 
 function sleep(ms: number): Promise<void> {
-	return new Promise((r) => setTimeout(r, ms));
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+interface SpotifyErrorBody {
+	error?: {
+		status?: number;
+		message?: string;
+		reason?: string;
+	};
+}
+
+function parseSpotifyErrorBody(text: string | undefined): SpotifyErrorBody {
+	if (!text) return {};
+	try {
+		const parsed: unknown = JSON.parse(text);
+		if (!isRecord(parsed) || !isRecord(parsed.error)) return {};
+		const { status, message, reason } = parsed.error;
+		return {
+			error: {
+				status: typeof status === 'number' ? status : undefined,
+				message: typeof message === 'string' ? message : undefined,
+				reason: typeof reason === 'string' ? reason : undefined,
+			},
+		};
+	} catch {
+		return {};
+	}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
 }
 
 /**

@@ -14,6 +14,7 @@
 
 import { App, Modal, Notice, SuggestModal, Setting } from 'obsidian';
 import type SpotifyControlPlugin from './main';
+import { errorMessage } from './util';
 
 type Kind = 'track' | 'album' | 'playlist' | 'episode' | 'show';
 
@@ -65,94 +66,85 @@ export class SpotifySearchModal extends SuggestModal<Result> {
 		const myGen = ++this.queryGeneration;
 		return new Promise((resolve) => {
 			if (this.debounceHandle != null) window.clearTimeout(this.debounceHandle);
-			this.debounceHandle = window.setTimeout(async () => {
-				if (myGen !== this.queryGeneration || query !== this.latestQuery) {
-					resolve([]);
-					return;
-				}
-				if (!this.plugin.auth.isAuthed || query.trim().length === 0) {
-					resolve([]);
-					return;
-				}
-				try {
-					const r = await this.plugin.api.search(
-						query,
-						['track', 'album', 'playlist', 'episode', 'show'],
-						5,
-					);
-					// Generation check AFTER await — a newer query may have
-					// fired while we waited for the API. Discard stale results.
-					if (myGen !== this.queryGeneration) {
+			this.debounceHandle = window.setTimeout(() => {
+				this.fetchSuggestions(query, myGen)
+					.then(resolve)
+					.catch((error: unknown) => {
+						console.error('[spotify-control] search failed', error);
+						new Notice(`Search failed: ${errorMessage(error)}`);
 						resolve([]);
-						return;
-					}
-					const results: Result[] = [];
-					for (const t of r.tracks?.items ?? []) {
-						results.push({
-							kind: 'track',
-							name: t.name,
-							subtitle: `${t.artists.map((a) => a.name).join(', ')} — ${t.album.name}`,
-							uri: t.uri,
-							imageUrl: t.album.images?.[0]?.url ?? null,
-						});
-					}
-					for (const a of r.albums?.items ?? []) {
-						results.push({
-							kind: 'album',
-							name: a.name,
-							subtitle: `Album — ${a.artists.map((x) => x.name).join(', ')}`,
-							uri: a.uri,
-							imageUrl: a.images?.[0]?.url ?? null,
-						});
-					}
-					for (const p of r.playlists?.items ?? []) {
-						// Spotify sometimes returns null entries in playlist results
-						// (deleted playlists, etc.) — narrow with a type guard
-						// instead of .filter(Boolean) which TS can't track.
-						if (!p) continue;
-						results.push({
-							kind: 'playlist',
-							name: p.name,
-							subtitle: `Playlist — ${p.owner?.display_name ?? ''}`,
-							uri: p.uri,
-							imageUrl: p.images?.[0]?.url ?? null,
-						});
-					}
-					for (const e of r.episodes?.items ?? []) {
-						// Same null-entry guard — Spotify includes nulls for
-						// region-blocked or removed episodes/shows.
-						if (!e) continue;
-						const desc = e.description?.trim();
-						results.push({
-							kind: 'episode',
-							name: e.name,
-							subtitle: desc
-								? `Episode — ${truncate(desc, 80)}`
-								: 'Episode',
-							uri: e.uri,
-							imageUrl: e.images?.[0]?.url ?? null,
-						});
-					}
-					for (const s of r.shows?.items ?? []) {
-						if (!s) continue;
-						results.push({
-							kind: 'show',
-							name: s.name,
-							subtitle: s.publisher
-								? `Podcast — ${s.publisher}`
-								: 'Podcast',
-							uri: s.uri,
-							imageUrl: s.images?.[0]?.url ?? null,
-						});
-					}
-					resolve(results);
-				} catch (e: any) {
-					console.error('[spotify-control] search failed', e);
-					new Notice(`Search failed: ${e?.message ?? e}`);
-					resolve([]);
-				}
+					});
 			}, 250);
 		});
+	}
+
+	private async fetchSuggestions(query: string, generation: number): Promise<Result[]> {
+		if (generation !== this.queryGeneration || query !== this.latestQuery) return [];
+		if (!this.plugin.auth.isAuthed || query.trim().length === 0) return [];
+
+		const response = await this.plugin.api.search(
+			query,
+			['track', 'album', 'playlist', 'episode', 'show'],
+			5,
+		);
+		// A newer query may have fired while the API request was in flight.
+		if (generation !== this.queryGeneration) return [];
+
+		const results: Result[] = [];
+		for (const track of response.tracks?.items ?? []) {
+			results.push({
+				kind: 'track',
+				name: track.name,
+				subtitle: `${track.artists.map((artist) => artist.name).join(', ')} — ${track.album.name}`,
+				uri: track.uri,
+				imageUrl: track.album.images?.[0]?.url ?? null,
+			});
+		}
+		for (const album of response.albums?.items ?? []) {
+			results.push({
+				kind: 'album',
+				name: album.name,
+				subtitle: `Album — ${album.artists.map((artist) => artist.name).join(', ')}`,
+				uri: album.uri,
+				imageUrl: album.images?.[0]?.url ?? null,
+			});
+		}
+		for (const playlist of response.playlists?.items ?? []) {
+			if (!playlist) continue;
+			results.push({
+				kind: 'playlist',
+				name: playlist.name,
+				subtitle: `Playlist — ${playlist.owner?.display_name ?? ''}`,
+				uri: playlist.uri,
+				imageUrl: playlist.images?.[0]?.url ?? null,
+			});
+		}
+		for (const episode of response.episodes?.items ?? []) {
+			if (!episode) continue;
+			const description = episode.description?.trim();
+			results.push({
+				kind: 'episode',
+				name: episode.name,
+				subtitle: description
+					? `Episode — ${truncate(description, 80)}`
+					: 'Episode',
+				uri: episode.uri,
+				imageUrl: episode.images?.[0]?.url ?? null,
+			});
+		}
+		for (const show of response.shows?.items ?? []) {
+			if (!show) continue;
+			results.push({
+				kind: 'show',
+				name: show.name,
+				subtitle: show.publisher
+					? `Podcast — ${show.publisher}`
+					: 'Podcast',
+				uri: show.uri,
+				imageUrl: show.images?.[0]?.url ?? null,
+			});
+		}
+		return results;
 	}
 
 	renderSuggestion(item: Result, el: HTMLElement): void {
@@ -170,7 +162,14 @@ export class SpotifySearchModal extends SuggestModal<Result> {
 		kindEl.addClass(`sc-kind-${item.kind}`);
 	}
 
-	async onChooseSuggestion(item: Result): Promise<void> {
+	onChooseSuggestion(item: Result): void {
+		this.chooseSuggestion(item).catch((error: unknown) => {
+			console.error('[spotify-control] choose search result failed', error);
+			new Notice(`Couldn't play: ${errorMessage(error)}`);
+		});
+	}
+
+	private async chooseSuggestion(item: Result): Promise<void> {
 		if (!this.plugin.settings.tokens) return;
 		// Items that play as a single URI (tracks, episodes) get the
 		// play-now-vs-add-to-queue prompt. Items that play as a context
@@ -178,12 +177,8 @@ export class SpotifySearchModal extends SuggestModal<Result> {
 		if (PLAY_SHAPE[item.kind] === 'uri') {
 			new TrackActionModal(this.app, item, this.plugin).open();
 		} else {
-			try {
-				await this.plugin.api.play({ contextUri: item.uri });
-				new Notice(`Playing ${item.kind}: ${item.name}`);
-			} catch (e: any) {
-				new Notice(`Couldn't play: ${e?.message ?? e}`);
-			}
+			await this.plugin.api.play({ contextUri: item.uri });
+			new Notice(`Playing ${item.kind}: ${item.name}`);
 		}
 	}
 }
@@ -236,8 +231,8 @@ class TrackActionModal extends Modal {
 				await this.plugin.api.queue(this.track.uri);
 				new Notice(`Queued: ${this.track.name}`);
 			}
-		} catch (e: any) {
-			new Notice(`Failed: ${e?.message ?? e}`);
+		} catch (error: unknown) {
+			new Notice(`Failed: ${errorMessage(error)}`);
 		}
 	}
 

@@ -19,7 +19,9 @@ import {
 	Setting,
 	WorkspaceLeaf,
 	Notice,
+	requireApiVersion,
 } from 'obsidian';
+import type { SettingDefinitionItem } from 'obsidian';
 import { SpotifyAuth } from './auth';
 import { SpotifyDirectApi } from './api';
 import { SpotifyView, SPOTIFY_VIEW_TYPE } from './view';
@@ -55,6 +57,13 @@ interface DiskSettings extends Omit<SpotifyControlSettings, 'tokens'> {
 	webPlaybackDeviceName?: string;
 }
 
+interface AppWithSettingsController extends App {
+	setting?: {
+		open?: () => void;
+		openTabById?: (id: string) => void;
+	};
+}
+
 export default class SpotifyControlPlugin extends Plugin {
 	settings!: SpotifyControlSettings;
 	auth!: SpotifyAuth;
@@ -62,6 +71,7 @@ export default class SpotifyControlPlugin extends Plugin {
 	secure!: SecureStorage;
 	lyrics!: LyricsService;
 	queue!: QueueService;
+	private settingTab: SpotifyControlSettingTab | null = null;
 	/**
 	 * Spotify account tier. Set by auth.detectPremiumTier() shortly after
 	 * connection. Used by api.ts to distinguish "Free user can't do this"
@@ -102,7 +112,8 @@ export default class SpotifyControlPlugin extends Plugin {
 
 		registerCommands(this);
 
-		this.addSettingTab(new SpotifyControlSettingTab(this.app, this));
+		this.settingTab = new SpotifyControlSettingTab(this.app, this);
+		this.addSettingTab(this.settingTab);
 
 		await this.auth.restore();
 	}
@@ -150,7 +161,7 @@ export default class SpotifyControlPlugin extends Plugin {
 			disk.tokensStored = undefined;
 		}
 		// Strip legacy field; we no longer write it.
-		(disk as DiskSettings).tokens = undefined;
+		disk.tokens = undefined;
 		await this.saveData(disk);
 	}
 
@@ -159,6 +170,7 @@ export default class SpotifyControlPlugin extends Plugin {
 		this.app.workspace
 			.getLeavesOfType(SPOTIFY_VIEW_TYPE)
 			.forEach((leaf) => (leaf.view as SpotifyView).onAuthChanged?.());
+		this.settingTab?.refreshAuthState();
 	}
 
 	/** Called from settings tab when a UI-affecting setting changes. */
@@ -170,15 +182,15 @@ export default class SpotifyControlPlugin extends Plugin {
 
 	/** Open the plugin's settings tab. Used by sidebar buttons. */
 	openSettings() {
-		// Cast to any: openTab + the internal setting tab navigation are not in
-		// the public typings. Falls back to a Notice if the APIs change.
+		// These settings-navigation methods are stable in the desktop app but
+		// aren't part of Obsidian's public TypeScript surface.
 		try {
-			const setting = (this.app as any).setting;
-			setting.open?.();
-			setting.openTabById?.('spotify-control');
+			const setting = (this.app as AppWithSettingsController).setting;
+			setting?.open?.();
+			setting?.openTabById?.('spotify-control');
 		} catch (e) {
 			console.error('[spotify-control] openSettings failed', e);
-			new Notice('Open Settings → Community plugins → Spotify Control.');
+			new Notice('Open settings → community plugins → Spotify Control.');
 		}
 	}
 
@@ -215,7 +227,7 @@ export default class SpotifyControlPlugin extends Plugin {
 					type: 'webviewer',
 					state: { url, navigate: true },
 					active: true,
-				} as any);
+				});
 				this.app.workspace.setActiveLeaf(leaf, { focus: true });
 				new Notice('Opened Spotify in Obsidian (audio playback may not work).');
 			} catch (e) {
@@ -234,6 +246,316 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 	constructor(app: App, plugin: SpotifyControlPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+	}
+
+	refreshAuthState(): void {
+		if (requireApiVersion('1.13.0')) this.update();
+	}
+
+	/**
+	 * Obsidian 1.13+ renders and indexes these definitions. The imperative
+	 * display() method below remains the fallback for Obsidian 1.4–1.12.
+	 */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return [
+			{
+				name: 'Setup',
+				desc: `Create an app in the Spotify developer dashboard, add ${REDIRECT_URI} as its redirect URI, then paste the client ID below. No client secret is needed because this plugin uses PKCE.`,
+				render: (setting) => {
+					setting
+						.setName('Setup')
+						.setDesc(
+							`Create an app in the Spotify developer dashboard, add ${REDIRECT_URI} as its redirect URI, then paste the client ID below. No client secret is needed because this plugin uses PKCE.`,
+						)
+						.addButton((button) =>
+							button
+								.setButtonText('Open Spotify dashboard')
+								.onClick(() => {
+									window.open(
+										'https://developer.spotify.com/dashboard',
+										'_blank',
+										'noopener,noreferrer',
+									);
+								}),
+						);
+				},
+			},
+			{
+				name: 'Token storage',
+				desc: this.plugin.secure.encryptionAvailable
+					? 'Tokens are encrypted with the OS keychain.'
+					: 'The OS keychain is unavailable, so tokens are stored in plaintext in data.json.',
+			},
+			{
+				name: 'Mobile preview',
+				desc: 'Hover-only controls are disabled, and tokens are stored in plaintext because the OS keychain is unavailable.',
+				visible: () => Platform.isMobile,
+			},
+			{
+				name: 'Spotify client ID',
+				desc: 'From your Spotify developer dashboard.',
+				control: {
+					type: 'text',
+					key: 'clientId',
+					placeholder: 'abcdef1234567890…',
+				},
+			},
+			{
+				name: 'Account',
+				desc: this.plugin.settings.tokens ? 'Logged in.' : 'Not logged in.',
+				render: (setting) => {
+					setting
+						.setName('Account')
+						.setDesc(
+							this.plugin.settings.tokens ? 'Logged in.' : 'Not logged in.',
+						)
+						.addButton((button) =>
+							button
+								.setButtonText(
+									this.plugin.settings.tokens ? 'Re-login' : 'Log in',
+								)
+								.setCta()
+								.onClick(() => this.plugin.auth.beginLogin()),
+						)
+						.addButton((button) =>
+							button.setButtonText('Log out').onClick(async () => {
+								await this.plugin.auth.logout();
+							}),
+						);
+				},
+			},
+			{
+				name: 'Reveal controls on album art hover',
+				desc: 'When enabled, previous, play, and next appear over the album art on hover. When disabled, they remain in the transport row.',
+				visible: () => !Platform.isMobile,
+				control: { type: 'toggle', key: 'hoverRevealControls' },
+			},
+			{
+				name: 'Sidebar poll interval',
+				desc: 'How often the sidebar asks Spotify for the current state, in milliseconds.',
+				control: {
+					type: 'number',
+					key: 'pollIntervalMs',
+					min: 500,
+					step: 100,
+					validate: (value) =>
+						Number.isFinite(value) && value >= 500
+							? undefined
+							: 'Enter at least 500 milliseconds.',
+				},
+			},
+			{
+				type: 'group',
+				heading: 'Now playing',
+				items: [
+					{
+						name: 'Insert-now-playing template',
+						desc: 'Variables: {{name}}, {{artist}}, {{album}}, {{url}}, {{uri}}, {{lyrics}}, {{lrc}}, {{show}}, and {{publisher}}.',
+						control: {
+							type: 'textarea',
+							key: 'insertTemplate',
+							rows: 4,
+						},
+					},
+					{
+						name: 'Now-playing note folder',
+						desc: 'Missing folders are created automatically. Leave empty for the vault root.',
+						control: {
+							type: 'text',
+							key: 'nowPlayingNoteFolder',
+							placeholder: 'Media',
+						},
+					},
+					{
+						name: 'Now-playing note filename',
+						desc: 'Filename template used for notes and lyrics files.',
+						control: {
+							type: 'text',
+							key: 'nowPlayingNoteNameTemplate',
+							placeholder: '{{artist}} - {{name}}',
+						},
+					},
+					{
+						name: 'Now-playing note template',
+						desc: 'Full Markdown body for newly created notes, with the same variables as the insert template.',
+						control: {
+							type: 'textarea',
+							key: 'nowPlayingNoteTemplate',
+							rows: 7,
+						},
+					},
+				],
+			},
+			{
+				type: 'group',
+				heading: 'Lyrics and queue',
+				items: [
+					{
+						name: 'Lyrics insert template',
+						desc: 'Variables include {{lyrics}}, raw synchronized {{lrc}}, and all now-playing fields.',
+						control: {
+							type: 'textarea',
+							key: 'lyricsInsertTemplate',
+							rows: 4,
+						},
+					},
+					{
+						name: 'Lyrics export folder',
+						desc: 'Synchronized lyrics are saved as .lrc; plain lyrics fall back to .txt.',
+						control: {
+							type: 'text',
+							key: 'lyricsFolder',
+							placeholder: 'Media/Lyrics',
+						},
+					},
+					{
+						name: 'Show lyrics button',
+						desc: 'Fetches lyrics from LRCLIB and shows the lyrics toggle.',
+						control: { type: 'toggle', key: 'enableLyrics' },
+					},
+					{
+						name: 'Lyrics and queue panel position',
+						control: {
+							type: 'dropdown',
+							key: 'lyricsPosition',
+							options: {
+								below: 'Below art',
+								replace: 'Replace album art',
+							},
+						},
+					},
+					{
+						name: 'Show queue button',
+						desc: 'Shows upcoming tracks and lets you skip to one.',
+						control: { type: 'toggle', key: 'enableQueue' },
+					},
+				],
+			},
+			{
+				type: 'group',
+				heading: 'Controls on art (experimental)',
+				items: [
+					{
+						name: 'Progress bar on album art',
+						desc: 'Shows a clickable progress bar at the bottom of the album art.',
+						control: { type: 'toggle', key: 'progressOnArt' },
+					},
+					{
+						name: 'Volume button on album art',
+						desc: 'Shows a volume button and popover slider on the album art.',
+						control: { type: 'toggle', key: 'volumeOnArt' },
+					},
+				],
+			},
+			{
+				type: 'group',
+				heading: 'Spotify web player',
+				items: [
+					{
+						name: 'Open in',
+						desc: 'The external browser is recommended because Obsidian does not include the Widevine module Spotify needs for audio playback.',
+						control: {
+							type: 'dropdown',
+							key: 'webPlayerMode',
+							options: {
+								external: 'External browser (recommended)',
+								obsidian: 'Obsidian tab (UI only, no audio)',
+							},
+						},
+					},
+					{
+						name: 'Open Spotify web player',
+						action: () => {
+							this.plugin.openSpotifyWebPlayer().catch((error: unknown) => {
+								console.error(
+									'[spotify-control] open web player failed',
+									error,
+								);
+							});
+						},
+					},
+				],
+			},
+		];
+	}
+
+	getControlValue(key: string): unknown {
+		switch (key) {
+			case 'clientId': return this.plugin.settings.clientId;
+			case 'pollIntervalMs': return this.plugin.settings.pollIntervalMs;
+			case 'insertTemplate': return this.plugin.settings.insertTemplate;
+			case 'nowPlayingNoteFolder': return this.plugin.settings.nowPlayingNoteFolder;
+			case 'nowPlayingNoteNameTemplate':
+				return this.plugin.settings.nowPlayingNoteNameTemplate;
+			case 'nowPlayingNoteTemplate': return this.plugin.settings.nowPlayingNoteTemplate;
+			case 'lyricsInsertTemplate': return this.plugin.settings.lyricsInsertTemplate;
+			case 'lyricsFolder': return this.plugin.settings.lyricsFolder;
+			case 'hoverRevealControls': return this.plugin.settings.hoverRevealControls;
+			case 'enableLyrics': return this.plugin.settings.enableLyrics;
+			case 'lyricsPosition': return this.plugin.settings.lyricsPosition;
+			case 'enableQueue': return this.plugin.settings.enableQueue;
+			case 'progressOnArt': return this.plugin.settings.progressOnArt;
+			case 'volumeOnArt': return this.plugin.settings.volumeOnArt;
+			case 'webPlayerMode': return this.plugin.settings.webPlayerMode;
+			default: return undefined;
+		}
+	}
+
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		let refreshViews = false;
+		switch (key) {
+			case 'clientId':
+				if (typeof value !== 'string') return;
+				this.plugin.settings.clientId = value.trim();
+				break;
+			case 'pollIntervalMs':
+				if (typeof value !== 'number' || !Number.isFinite(value) || value < 500) {
+					return;
+				}
+				this.plugin.settings.pollIntervalMs = value;
+				break;
+			case 'insertTemplate':
+			case 'nowPlayingNoteFolder':
+			case 'nowPlayingNoteNameTemplate':
+			case 'nowPlayingNoteTemplate':
+			case 'lyricsInsertTemplate':
+			case 'lyricsFolder':
+				if (typeof value !== 'string') return;
+				this.plugin.settings[key] = value;
+				break;
+			case 'hoverRevealControls':
+			case 'progressOnArt':
+			case 'volumeOnArt':
+				if (typeof value !== 'boolean') return;
+				this.plugin.settings[key] = value;
+				refreshViews = true;
+				break;
+			case 'enableLyrics':
+				if (typeof value !== 'boolean') return;
+				this.plugin.settings.enableLyrics = value;
+				refreshViews = true;
+				if (!value) this.plugin.lyrics.clear();
+				break;
+			case 'lyricsPosition':
+				if (value !== 'replace' && value !== 'below') return;
+				this.plugin.settings.lyricsPosition = value;
+				refreshViews = true;
+				break;
+			case 'enableQueue':
+				if (typeof value !== 'boolean') return;
+				this.plugin.settings.enableQueue = value;
+				refreshViews = true;
+				if (!value) this.plugin.queue.clear();
+				break;
+			case 'webPlayerMode':
+				if (value !== 'external' && value !== 'obsidian') return;
+				this.plugin.settings.webPlayerMode = value;
+				break;
+			default:
+				return;
+		}
+		await this.plugin.saveSettings();
+		if (refreshViews) this.plugin.notifyViewsSettingsChanged();
 	}
 
 	display(): void {
@@ -274,8 +596,8 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 
 		// ── Client ID ─────────────────────────────────────────────────
 		new Setting(containerEl)
-			.setName('Spotify Client ID')
-			.setDesc('From your Spotify Developer Dashboard.')
+			.setName('Spotify client ID')
+			.setDesc('From your Spotify developer dashboard.')
 			.addText((t) =>
 				t
 					.setPlaceholder('abcdef1234567890…')
@@ -332,7 +654,7 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('Sidebar poll interval (ms)')
 			.setDesc(
-				'How often the sidebar asks Spotify for current state. Lower = snappier, higher = fewer API calls. 3000 is a good default.',
+				'How often the sidebar asks Spotify for current state. Lower = snappier, higher = fewer API calls. A value of 3000 is a good default.',
 			)
 			.addText((t) =>
 				t
@@ -363,7 +685,7 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('Now-playing note folder')
 			.setDesc(
-				'Folder used by "Create note from now playing". Missing folders are created automatically. Leave empty for the vault root.',
+				'Destination for notes created from now playing. Missing folders are created automatically. Leave empty for the vault root.',
 			)
 			.addText((t) =>
 				t
@@ -422,7 +744,7 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('Lyrics export folder')
 			.setDesc(
-				'Folder used by "Save now-playing lyrics file". Synced lyrics are saved as .lrc; plain lyrics fall back to .txt.',
+				'Destination for saved now-playing lyrics. Synced lyrics use .lrc; plain lyrics fall back to .txt.',
 			)
 			.addText((t) =>
 				t
@@ -516,10 +838,10 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 			);
 
 		// ── Spotify Web Player ────────────────────────────────────────
-		new Setting(containerEl).setName('Spotify Web Player').setHeading();
+		new Setting(containerEl).setName('Spotify web player').setHeading();
 		const webPlayerNote = containerEl.createDiv({ cls: 'setting-item-description' });
 		webPlayerNote.appendText(
-			'The "Open Spotify Web Player" command opens open.spotify.com. ',
+			'The "Open Spotify web player" command opens open.spotify.com. ',
 		);
 		webPlayerNote.createEl('strong', { text: 'External browser is recommended' });
 		webPlayerNote.appendText(
@@ -571,11 +893,11 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 		li3.appendText('Copy the ');
 		li3.createEl('strong', { text: 'Client ID' });
 		li3.appendText(' below. ');
-		li3.createEl('em', { text: 'No Client Secret needed' });
+		li3.createEl('em', { text: 'No client secret needed' });
 		li3.appendText(' — this plugin uses PKCE.');
 
 		ol.createEl('li', {
-			text: "Click Log in. Your browser will open Spotify's auth page.",
+			text: "Click log in. Your browser will open Spotify's auth page.",
 		});
 		ol.createEl('li', {
 			text: "After approving, you'll be redirected back into Obsidian.",

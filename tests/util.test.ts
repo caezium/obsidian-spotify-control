@@ -12,8 +12,10 @@ import {
 	randomString,
 	sha256Base64Url,
 	base64UrlEncode,
+	isBase64BufferConstructor,
 	renderTemplate,
 } from '../src/util';
+import { Buffer } from 'node:buffer';
 
 // ── formatTime ──────────────────────────────────────────────────────────────
 
@@ -154,6 +156,13 @@ test('base64UrlEncode: uses URL-safe alphabet (no + / =)', () => {
 	assert.ok(!out.includes('+'), 'no plus sign');
 	assert.ok(!out.includes('/'), 'no slash');
 	assert.ok(!out.includes('='), 'no padding');
+});
+
+test('isBase64BufferConstructor: accepts Node Buffer and rejects plain values', () => {
+	assert.equal(isBase64BufferConstructor(Buffer), true);
+	assert.equal(isBase64BufferConstructor({ from: () => new Uint8Array() }), true);
+	assert.equal(isBase64BufferConstructor({}), false);
+	assert.equal(isBase64BufferConstructor(null), false);
 });
 
 test('sha256Base64Url: known vector', async () => {

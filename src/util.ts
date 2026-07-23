@@ -111,35 +111,19 @@ export async function sha256Base64Url(input: string): Promise<string> {
 	return base64UrlEncode(new Uint8Array(hash));
 }
 
-/**
- * Get a Web Crypto-compatible object.
- *
- *   - Obsidian's Electron renderer always has `globalThis.crypto`.
- *   - The Node 18 test runner doesn't (Web Crypto became a default global
- *     in Node 19+). For that case we fall back to `node:crypto.webcrypto`,
- *     which has the same shape.
- *
- * `node:crypto` is listed as `external` in esbuild.config.mjs so the bundler
- * emits `require("node:crypto")` rather than trying to inline it. That call
- * works in Node and in Electron's renderer; the fallback branch only
- * executes when `globalThis.crypto` is missing.
- */
+/** Get the Web Crypto implementation exposed by Obsidian's renderer. */
 function getCrypto(): Crypto {
-	if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto?.subtle) {
-		return globalThis.crypto;
+	if (typeof crypto !== 'undefined' && crypto.subtle) {
+		return crypto;
 	}
-	// eslint-disable-next-line @typescript-eslint/no-require-imports -- Node 18 test fallback; this branch is unreachable in Obsidian.
-	const nodeCrypto = require('node:crypto') as { webcrypto: Crypto };
-	return nodeCrypto.webcrypto;
+	throw new Error('Web Crypto is unavailable in this environment.');
 }
 
 /** Bytes → base64url. */
 export function base64UrlEncode(bytes: Uint8Array): string {
 	let s = '';
 	for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-	// btoa is available in browsers; in Node we polyfill via Buffer below.
-	const b64 =
-		typeof btoa !== 'undefined' ? btoa(s) : Buffer.from(s, 'binary').toString('base64');
+	const b64 = btoa(s);
 	return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
@@ -153,5 +137,30 @@ export function renderTemplate(
 	template: string,
 	vars: Record<string, string | undefined>,
 ): string {
-	return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? '');
+	return template.replace(
+		/\{\{(\w+)\}\}/g,
+		(_match: string, key: string) => vars[key] ?? '',
+	);
+}
+
+/** Turn an unknown caught value into a safe user-facing message. */
+export function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+export interface Base64BufferConstructor {
+	from(value: string, encoding: 'base64'): Uint8Array;
+}
+
+/** Validate the callable Buffer constructor exposed by Node's buffer module. */
+export function isBase64BufferConstructor(
+	value: unknown,
+): value is Base64BufferConstructor {
+	if (
+		(typeof value !== 'object' || value === null) &&
+		typeof value !== 'function'
+	) {
+		return false;
+	}
+	return 'from' in value && typeof value.from === 'function';
 }

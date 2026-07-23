@@ -24,49 +24,98 @@
  *   Exactly one of the two is present at any time.
  */
 
-import { Notice } from 'obsidian';
+import { Notice, Platform } from 'obsidian';
+import { isBase64BufferConstructor } from './util';
+import type { Base64BufferConstructor } from './util';
 
-interface SafeStorage {
+interface Base64Serializable {
+	toString(): string;
+	toString(encoding: 'base64'): string;
+}
+
+interface ElectronSafeStorage {
 	isEncryptionAvailable(): boolean;
-	encryptString(plainText: string): Buffer;
-	decryptString(encrypted: Buffer): string;
+	encryptString(plainText: string): Base64Serializable;
+	decryptString(encrypted: Uint8Array): string;
+}
+
+interface EncryptionBackend {
+	safeStorage: ElectronSafeStorage;
+	buffer: Base64BufferConstructor;
+}
+
+type ModuleLoader = (moduleId: string) => unknown;
+
+interface WindowWithModuleLoader extends Window {
+	require?: unknown;
 }
 
 /**
  * Try to acquire Electron's safeStorage instance. Returns null if not
  * accessible — caller falls back to plaintext.
  */
-function getSafeStorage(): SafeStorage | null {
+function getEncryptionBackend(): EncryptionBackend | null {
+	if (!Platform.isDesktop) return null;
 	try {
 		// Modern Obsidian (Electron 28+) exposes electron module via require.
 		// safeStorage in renderer was deprecated; some Obsidian builds still
 		// expose it via @electron/remote or process.contextIsolated == false.
 		// We attempt the most common paths in order.
 
-		// Path 1: direct require('electron') — works when nodeIntegration is on
-		// (Obsidian plugins run with full Node integration).
-		const electron = (globalThis as any).require?.('electron');
-		if (electron?.safeStorage?.isEncryptionAvailable) {
-			return electron.safeStorage as SafeStorage;
-		}
-		if (electron?.remote?.safeStorage?.isEncryptionAvailable) {
-			return electron.remote.safeStorage as SafeStorage;
-		}
+		const loadModule = getModuleLoader();
+		if (!loadModule) return null;
 
-		// Path 2: @electron/remote (community module Obsidian sometimes bundles)
-		try {
-			const remote = (globalThis as any).require?.('@electron/remote');
-			if (remote?.safeStorage?.isEncryptionAvailable) {
-				return remote.safeStorage as SafeStorage;
+		// Path 1: direct electron export, then its legacy remote export.
+		const electron = loadModule('electron');
+		let safeStorage = findSafeStorage(electron);
+
+		// Path 2: @electron/remote (community module Obsidian sometimes bundles).
+		if (!safeStorage) {
+			try {
+				safeStorage = findSafeStorage(loadModule('@electron/remote'));
+			} catch {
+				safeStorage = null;
 			}
-		} catch {
-			/* not bundled */
 		}
 
-		return null;
+		const buffer = findBufferConstructor(loadModule('buffer'));
+		if (!safeStorage || !buffer || !safeStorage.isEncryptionAvailable()) return null;
+		return { safeStorage, buffer };
 	} catch {
 		return null;
 	}
+}
+
+function getModuleLoader(): ModuleLoader | null {
+	const candidate = (window as WindowWithModuleLoader).require;
+	return typeof candidate === 'function' ? candidate as ModuleLoader : null;
+}
+
+function findSafeStorage(value: unknown): ElectronSafeStorage | null {
+	if (!isRecord(value)) return null;
+	if (isSafeStorage(value.safeStorage)) return value.safeStorage;
+	if (isRecord(value.remote) && isSafeStorage(value.remote.safeStorage)) {
+		return value.remote.safeStorage;
+	}
+	return isSafeStorage(value) ? value : null;
+}
+
+function isSafeStorage(value: unknown): value is ElectronSafeStorage {
+	return (
+		isRecord(value) &&
+		typeof value.isEncryptionAvailable === 'function' &&
+		typeof value.encryptString === 'function' &&
+		typeof value.decryptString === 'function'
+	);
+}
+
+function findBufferConstructor(value: unknown): Base64BufferConstructor | null {
+	if (!isRecord(value)) return null;
+	return isBase64BufferConstructor(value.Buffer) ? value.Buffer : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
 }
 
 let warnedAboutPlaintext = false;
@@ -79,12 +128,12 @@ export interface StoredSecret {
 }
 
 export class SecureStorage {
-	private safeStorage: SafeStorage | null;
+	private backend: EncryptionBackend | null;
 	private available: boolean;
 
 	constructor() {
-		this.safeStorage = getSafeStorage();
-		this.available = !!this.safeStorage?.isEncryptionAvailable?.();
+		this.backend = getEncryptionBackend();
+		this.available = this.backend !== null;
 	}
 
 	/** True iff tokens will be encrypted at rest. */
@@ -98,9 +147,9 @@ export class SecureStorage {
 	 * `enc`, never both).
 	 */
 	wrap(value: unknown): StoredSecret {
-		if (this.available && this.safeStorage) {
+		if (this.backend) {
 			try {
-				const cipher = this.safeStorage.encryptString(JSON.stringify(value));
+				const cipher = this.backend.safeStorage.encryptString(JSON.stringify(value));
 				return { enc: cipher.toString('base64') };
 			} catch (e) {
 				console.error('[spotify-control] encrypt failed, falling back', e);
@@ -133,10 +182,10 @@ export class SecureStorage {
 
 	unwrap<T = unknown>(stored: StoredSecret | null | undefined): T | null {
 		if (!stored) return null;
-		if (stored.enc && this.safeStorage) {
+		if (stored.enc && this.backend) {
 			try {
-				const buf = Buffer.from(stored.enc, 'base64');
-				const json = this.safeStorage.decryptString(buf);
+				const encrypted = this.backend.buffer.from(stored.enc, 'base64');
+				const json = this.backend.safeStorage.decryptString(encrypted);
 				this.lastDecryptionFailed = false;
 				return JSON.parse(json) as T;
 			} catch (e) {

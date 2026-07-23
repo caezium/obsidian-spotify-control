@@ -74,7 +74,9 @@ export class SpotifyAuth {
 			this.scheduleRefresh(tokens);
 		}
 		// Cache Premium tier in the background — non-blocking.
-		this.detectPremiumTier();
+		this.detectPremiumTier().catch((error: unknown) => {
+			console.warn('[spotify-control] tier detection failed', error);
+		});
 	}
 
 	/**
@@ -84,7 +86,7 @@ export class SpotifyAuth {
 	async beginLogin() {
 		const clientId = this.plugin.settings.clientId.trim();
 		if (!clientId) {
-			new Notice('Set your Spotify Client ID in plugin settings first.');
+			new Notice('Set your Spotify client ID in plugin settings first.');
 			return;
 		}
 		const codeVerifier = randomString(64);
@@ -166,7 +168,9 @@ export class SpotifyAuth {
 			// Detect Premium tier once on connection so the API layer can
 			// distinguish "you're on Free, this is genuinely disallowed"
 			// from "transient restriction, please retry".
-			this.detectPremiumTier();
+			this.detectPremiumTier().catch((error: unknown) => {
+				console.warn('[spotify-control] tier detection failed', error);
+			});
 		} finally {
 			this.pending = null;
 		}
@@ -262,7 +266,7 @@ export class SpotifyAuth {
 			
 			this.consecutiveRefreshFailures = 0;
 			new Notice(
-				'Spotify session expired and re-login is required (settings → Spotify Control → Log in).',
+				'Spotify session expired and re-login is required (settings → Spotify Control → log in).',
 				15_000,
 			);
 			this.plugin.onAuthChanged();
@@ -364,7 +368,11 @@ export class SpotifyAuth {
 		console.warn(
 			`[spotify-control] retry refresh in ${delay / 1000}s (attempt ${this.consecutiveRefreshFailures})`,
 		);
-		this.refreshTimer = window.setTimeout(() => this.refresh(), delay);
+		this.refreshTimer = window.setTimeout(() => {
+			this.refresh().catch((error: unknown) => {
+				console.error('[spotify-control] backoff refresh failed', error);
+			});
+		}, delay);
 	}
 
 	private clearTimer() {

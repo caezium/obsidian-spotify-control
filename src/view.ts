@@ -28,7 +28,8 @@
 
 import { ItemView, Platform, WorkspaceLeaf, setIcon, Notice } from 'obsidian';
 import type SpotifyControlPlugin from './main';
-import { formatTime } from './util';
+import type { SpotifyDevice, SpotifyEpisode, SpotifyTrack } from './api';
+import { errorMessage, formatTime } from './util';
 import { activeLineIndex, LyricsResult, LYRICS_NONE } from './lyrics';
 import { QueueItem } from './queue';
 
@@ -75,13 +76,6 @@ interface PlaybackState {
 	episodeReleaseDate: string;
 }
 
-interface Device {
-	id: string;
-	name: string;
-	type: string;
-	is_active: boolean;
-}
-
 const EMPTY_STATE: PlaybackState = {
 	isPlaying: false,
 	trackName: '',
@@ -104,10 +98,22 @@ const EMPTY_STATE: PlaybackState = {
 	episodeReleaseDate: '',
 };
 
+function isSpotifyEpisode(
+	item: SpotifyTrack | SpotifyEpisode | null,
+	currentlyPlayingType: 'track' | 'episode' | 'ad' | 'unknown' | undefined,
+): item is SpotifyEpisode {
+	if (!item) return false;
+	return (
+		currentlyPlayingType === 'episode' ||
+		item.uri.startsWith('spotify:episode:') ||
+		'show' in item
+	);
+}
+
 export class SpotifyView extends ItemView {
 	private plugin: SpotifyControlPlugin;
 	private lastState: PlaybackState = EMPTY_STATE;
-	private cachedDevices: Device[] = [];
+	private cachedDevices: SpotifyDevice[] = [];
 	private pollTick = 0;
 	private lastHeaderTrack = '';
 
@@ -273,7 +279,7 @@ export class SpotifyView extends ItemView {
 
 	onAuthChanged() {
 		this.consecutivePollFailures = 0;
-		this.poll();
+		this.runUiAction(() => this.poll(), 'refresh after authentication');
 	}
 
 	/** Called when the plugin's settings change (e.g., hover-mode toggle). */
@@ -351,10 +357,11 @@ export class SpotifyView extends ItemView {
 			overlayTop,
 			'shuffle',
 			'Shuffle',
-			() => this.callDirect(
-				() => this.plugin.api.shuffle(!this.lastState.shuffle),
-				'shuffle',
-			),
+			() =>
+				this.callDirect(
+					() => this.plugin.api.shuffle(!this.lastState.shuffle),
+					'shuffle',
+				),
 		);
 		this.overlayRepeatBtn = this.makeOverlayCornerButton(
 			overlayTop,
@@ -410,12 +417,14 @@ export class SpotifyView extends ItemView {
 		this.seekBar.addEventListener('touchstart', () => {
 			this.seekingActive = true;
 		});
-		this.seekBar.addEventListener('change', async () => {
-			const pct = Number(this.seekBar.value);
-			const positionMs = Math.round((pct / 100) * this.lastState.durationMs);
-			this.holdSeekGrace();
-			await this.callDirect(() => this.plugin.api.seek(positionMs), 'seek');
-			this.startLocalProgress(positionMs);
+		this.seekBar.addEventListener('change', () => {
+			this.runUiAction(async () => {
+				const pct = Number(this.seekBar.value);
+				const positionMs = Math.round((pct / 100) * this.lastState.durationMs);
+				this.holdSeekGrace();
+				await this.callDirect(() => this.plugin.api.seek(positionMs), 'seek');
+				this.startLocalProgress(positionMs);
+			}, 'seek');
 		});
 		this.seekBar.addEventListener('input', () => {
 			const pct = Number(this.seekBar.value);
@@ -496,11 +505,13 @@ export class SpotifyView extends ItemView {
 		this.volumeBar.addEventListener('mousedown', () => {
 			this.volumingActive = true;
 		});
-		this.volumeBar.addEventListener('change', async () => {
-			const v = Number(this.volumeBar.value);
-			this.pendingVolume = v;
-			this.holdVolumeGrace();
-			await this.callDirect(() => this.plugin.api.volume(v), 'volume');
+		this.volumeBar.addEventListener('change', () => {
+			this.runUiAction(async () => {
+				const value = Number(this.volumeBar.value);
+				this.pendingVolume = value;
+				this.holdVolumeGrace();
+				await this.callDirect(() => this.plugin.api.volume(value), 'volume');
+			}, 'volume');
 		});
 
 		// Custom device picker (replaces native <select> for visual consistency
@@ -515,18 +526,38 @@ export class SpotifyView extends ItemView {
 		this.render(EMPTY_STATE, /* connected */ false, /* hasDevices */ true);
 	}
 
+	private runUiAction(
+		action: () => void | Promise<unknown>,
+		label: string,
+	): void {
+		try {
+			const result = action();
+			if (result !== undefined) {
+				result.catch((error: unknown) => {
+					console.error(`[spotify-control] ${label} failed`, error);
+					new Notice(`Spotify ${label}: ${errorMessage(error)}`);
+				});
+			}
+		} catch (error: unknown) {
+			console.error(`[spotify-control] ${label} failed`, error);
+			new Notice(`Spotify ${label}: ${errorMessage(error)}`);
+		}
+	}
+
 	private iconButton(
 		parent: HTMLElement,
 		icon: string,
 		label: string,
-		onClick: () => void,
+		onClick: () => void | Promise<unknown>,
 	): HTMLButtonElement {
 		const btn = parent.createEl('button', {
 			cls: 'sc-btn',
 			attr: { 'aria-label': label, title: label },
 		});
 		setIcon(btn, icon);
-		btn.addEventListener('click', onClick);
+		btn.addEventListener('click', () => {
+			this.runUiAction(onClick, label);
+		});
 		return btn;
 	}
 
@@ -534,7 +565,7 @@ export class SpotifyView extends ItemView {
 		parent: HTMLElement,
 		icon: string,
 		label: string,
-		onClick: () => void,
+		onClick: () => void | Promise<unknown>,
 	): HTMLButtonElement {
 		const btn = parent.createEl('button', {
 			cls: 'sc-overlay-btn',
@@ -543,7 +574,7 @@ export class SpotifyView extends ItemView {
 		setIcon(btn, icon);
 		btn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			onClick();
+			this.runUiAction(onClick, label);
 		});
 		return btn;
 	}
@@ -553,7 +584,7 @@ export class SpotifyView extends ItemView {
 		parent: HTMLElement,
 		icon: string,
 		label: string,
-		onClick: () => void,
+		onClick: () => void | Promise<unknown>,
 	): HTMLButtonElement {
 		const btn = parent.createEl('button', {
 			cls: 'sc-overlay-corner-btn',
@@ -562,7 +593,7 @@ export class SpotifyView extends ItemView {
 		setIcon(btn, icon);
 		btn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			onClick();
+			this.runUiAction(onClick, label);
 		});
 		return btn;
 	}
@@ -602,7 +633,9 @@ export class SpotifyView extends ItemView {
 		this.pauseIconEl = stack.createSpan({ cls: 'sc-icon sc-icon-pause' });
 		setIcon(this.playIconEl, 'play');
 		setIcon(this.pauseIconEl, 'pause');
-		btn.addEventListener('click', () => this.togglePlay());
+		btn.addEventListener('click', () => {
+			this.runUiAction(() => this.togglePlay(), 'play/pause');
+		});
 		return btn;
 	}
 
@@ -618,7 +651,7 @@ export class SpotifyView extends ItemView {
 		setIcon(pauseIcon, 'pause');
 		btn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			this.togglePlay();
+			this.runUiAction(() => this.togglePlay(), 'play/pause');
 		});
 		return [btn, playIcon, pauseIcon];
 	}
@@ -657,9 +690,10 @@ export class SpotifyView extends ItemView {
 		// Always fetch fresh on open — devices change rarely and polling
 		// for them every few seconds was wasted bandwidth. Cached list
 		// shows immediately; the refetch updates if it changed.
-		this.refreshDevices().then(() => {
+		this.runUiAction(async () => {
+			await this.refreshDevices();
 			this.populateDevices(this.cachedDevices, this.lastState.deviceId);
-		});
+		}, 'refresh devices');
 	}
 
 	/**
@@ -670,7 +704,7 @@ export class SpotifyView extends ItemView {
 		if (!this.plugin.auth.isAuthed) return;
 		try {
 			const d = await this.plugin.api.getAvailableDevices();
-			this.cachedDevices = (d.devices ?? []) as Device[];
+			this.cachedDevices = d.devices ?? [];
 		} catch (e) {
 			console.warn('[spotify-control] device fetch failed (non-fatal)', e);
 		}
@@ -826,7 +860,10 @@ export class SpotifyView extends ItemView {
 				const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
 				const positionMs = Math.round(pct * this.lastState.durationMs);
 				this.holdSeekGrace();
-				this.callDirect(() => this.plugin.api.seek(positionMs), 'seek');
+				this.runUiAction(
+					() => this.callDirect(() => this.plugin.api.seek(positionMs), 'seek'),
+					'seek',
+				);
 				this.startLocalProgress(positionMs);
 			});
 		} else if (!s.progressOnArt && this.artProgressEl) {
@@ -863,11 +900,13 @@ export class SpotifyView extends ItemView {
 			this.artVolumeSlider.addEventListener('mousedown', () => {
 				this.volumingActive = true;
 			});
-			this.artVolumeSlider.addEventListener('change', async () => {
-				const v = Number(this.artVolumeSlider!.value);
-				this.pendingVolume = v;
-				this.holdVolumeGrace();
-				await this.callDirect(() => this.plugin.api.volume(v), 'volume');
+			this.artVolumeSlider.addEventListener('change', () => {
+				this.runUiAction(async () => {
+					const value = Number(this.artVolumeSlider!.value);
+					this.pendingVolume = value;
+					this.holdVolumeGrace();
+					await this.callDirect(() => this.plugin.api.volume(value), 'volume');
+				}, 'volume');
 			});
 			// Close popover when clicking outside it. Stored in a field
 			// (not anonymous) so rebuildControlsOnArt() can remove it on
@@ -918,20 +957,22 @@ export class SpotifyView extends ItemView {
 	private scheduleNextPoll(delayMs: number) {
 		if (this.pollingStopped) return;
 		if (this.pollTimer != null) window.clearTimeout(this.pollTimer);
-		this.pollTimer = window.setTimeout(async () => {
-			this.pollTimer = null;
-			await this.poll();
-			if (!this.pollingStopped) {
-				const interval =
-					this.consecutivePollFailures > 0
-						? Math.min(
-								MAX_BACKOFF_MS,
-								this.plugin.settings.pollIntervalMs *
-									Math.pow(2, this.consecutivePollFailures - 1),
-							)
-						: this.plugin.settings.pollIntervalMs;
-				this.scheduleNextPoll(interval);
-			}
+		this.pollTimer = window.setTimeout(() => {
+			this.runUiAction(async () => {
+				this.pollTimer = null;
+				await this.poll();
+				if (!this.pollingStopped) {
+					const interval =
+						this.consecutivePollFailures > 0
+							? Math.min(
+									MAX_BACKOFF_MS,
+									this.plugin.settings.pollIntervalMs *
+										Math.pow(2, this.consecutivePollFailures - 1),
+								)
+							: this.plugin.settings.pollIntervalMs;
+					this.scheduleNextPoll(interval);
+				}
+			}, 'poll Spotify');
 		}, delayMs);
 	}
 
@@ -958,44 +999,49 @@ export class SpotifyView extends ItemView {
 				this.populateDevices(this.cachedDevices, null);
 				return;
 			}
-			const item = playback.item as any;
+			const item = playback.item;
 			// Episode detection — three independent signals, any one is sufficient:
 			//   1. `currently_playing_type` on the response root (authoritative;
 			//      set by Spotify regardless of additional_types)
-			//   2. `item.type === 'episode'` (on the item itself when
-			//      additional_types=episode was honored)
-			//   3. URI prefix / show field on item (defensive fallbacks)
+			//   2. The `spotify:episode:` URI prefix
+			//   3. The episode-only `show` field (defensive fallback)
 			// Using all three so a single missing field doesn't break detection.
-			const cpt = (playback as any).currently_playing_type;
-			const isEpisode =
-				cpt === 'episode' ||
-				item?.type === 'episode' ||
-				item?.uri?.startsWith?.('spotify:episode:') === true ||
-				!!item?.show;
+			let episode: SpotifyEpisode | null = null;
+			let track: SpotifyTrack | null = null;
+			if (isSpotifyEpisode(item, playback.currently_playing_type)) {
+				episode = item;
+			} else {
+				track = item;
+			}
+			const isEpisode = episode !== null;
 			const state: PlaybackState = {
 				isPlaying: playback.is_playing,
 				trackName: item?.name ?? '',
 				artist:
-					item?.artists?.map((a: any) => a.name).join(', ') ?? item?.show?.name ?? '',
-				album: item?.album?.name ?? item?.show?.publisher ?? '',
+					track?.artists.map((artist) => artist.name).join(', ') ??
+					episode?.show?.name ??
+					'',
+				album: track?.album.name ?? episode?.show?.publisher ?? '',
 				trackUri: item?.uri ?? '',
-				contextUri: (playback as any)?.context?.uri ?? null,
+				contextUri: playback.context?.uri ?? null,
 				albumArtUrl:
-					item?.album?.images?.[0]?.url ?? item?.images?.[0]?.url ?? null,
+					track?.album.images?.[0]?.url ?? episode?.images?.[0]?.url ?? null,
 				trackUrl: item?.external_urls?.spotify ?? null,
 				progressMs: playback.progress_ms ?? 0,
 				durationMs: item?.duration_ms ?? 0,
 				shuffle: playback.shuffle_state,
-				repeat: playback.repeat_state as PlaybackState['repeat'],
+				repeat: playback.repeat_state,
 				volumePercent: playback.device.volume_percent ?? 50,
 				deviceId: playback.device.id,
 				deviceName: playback.device.name,
 				hasActiveDevice: true,
 				isEpisode,
-				episodeDescription: isEpisode
-					? htmlDescriptionToText(item?.html_description) || item?.description || ''
+				episodeDescription: episode
+					? htmlDescriptionToText(episode.html_description) ||
+						episode.description ||
+						''
 					: '',
-				episodeReleaseDate: isEpisode ? (item?.release_date ?? '') : '',
+				episodeReleaseDate: episode?.release_date ?? '',
 			};
 			const prevTrackUri = this.lastState.trackUri;
 			this.render(state, true, true);
@@ -1007,13 +1053,13 @@ export class SpotifyView extends ItemView {
 
 			if (state.isPlaying) this.startLocalProgress(state.progressMs);
 			else this.stopLocalProgress();
-		} catch (e: any) {
+		} catch (error: unknown) {
 			this.consecutivePollFailures++;
-			console.error('[spotify-control] poll failed', e);
+			console.error('[spotify-control] poll failed', error);
 			this.statusEl.setText(
 				this.consecutivePollFailures > 1
 					? `Offline? (retry ${this.consecutivePollFailures}, backing off)`
-					: `Error: ${e?.message ?? e}`,
+					: `Error: ${errorMessage(error)}`,
 			);
 		}
 	}
@@ -1050,9 +1096,14 @@ export class SpotifyView extends ItemView {
 			this.emptyActionsEl.empty();
 			const openBtn = this.emptyActionsEl.createEl('button', {
 				cls: 'sc-empty-btn sc-empty-btn-secondary',
-				text: 'Open Spotify Web Player',
+				text: 'Open Spotify web player',
 			});
-			openBtn.addEventListener('click', () => this.plugin.openSpotifyWebPlayer());
+			openBtn.addEventListener('click', () => {
+				this.runUiAction(
+					() => this.plugin.openSpotifyWebPlayer(),
+					'open Spotify web player',
+				);
+			});
 			this.playerEl.setCssStyles({ display: hasDevices ? 'flex' : 'none' });
 			return;
 		}
@@ -1209,7 +1260,9 @@ export class SpotifyView extends ItemView {
 			cls: 'sc-empty-btn sc-empty-btn-primary',
 			text: 'Log in',
 		});
-		loginBtn.addEventListener('click', () => this.plugin.auth.beginLogin());
+		loginBtn.addEventListener('click', () => {
+			this.runUiAction(() => this.plugin.auth.beginLogin(), 'log in');
+		});
 		const settingsBtn = this.emptyActionsEl.createEl('button', {
 			cls: 'sc-empty-btn sc-empty-btn-secondary',
 			text: 'Settings',
@@ -1221,7 +1274,7 @@ export class SpotifyView extends ItemView {
 	 * Repopulate the device popover only if the device list changed.
 	 * Preserves user's open/scroll state mid-poll.
 	 */
-	private populateDevices(devices: Device[], activeId: string | null) {
+	private populateDevices(devices: SpotifyDevice[], activeId: string | null) {
 		const sig = devices.map((d) => `${d.id}:${d.is_active ? '1' : '0'}`).join('|');
 		const prevSig = this.devicePopover.dataset.sig ?? '';
 		if (sig === prevSig) return;
@@ -1249,13 +1302,17 @@ export class SpotifyView extends ItemView {
 				cls: 'sc-device-item-type',
 				text: d.type.toLowerCase(),
 			});
-			item.addEventListener('click', async (e) => {
+			item.addEventListener('click', (e) => {
 				e.stopPropagation();
 				this.closeDevicePopover();
 				if (isActive) return;
-				await this.callDirect(
-					() => this.plugin.api.transferTo(d.id, /* startPlaying */ true),
-					'transfer',
+				this.runUiAction(
+					() =>
+						this.callDirect(
+							() => this.plugin.api.transferTo(d.id, /* startPlaying */ true),
+							'transfer',
+						),
+					'transfer playback',
 				);
 			});
 		}
@@ -1342,8 +1399,8 @@ export class SpotifyView extends ItemView {
 					return this.callDirect(() => this.plugin.api.pause(), 'pause');
 				}
 				return this.callDirect(() => this.plugin.api.play(), 'play');
-			} catch (e: any) {
-				new Notice(`Play/pause: ${e?.message ?? e}`);
+			} catch (error: unknown) {
+				new Notice(`Play/pause: ${errorMessage(error)}`);
 				return;
 			}
 		}
@@ -1361,10 +1418,12 @@ export class SpotifyView extends ItemView {
 		}
 		try {
 			await fn();
-			window.setTimeout(() => this.poll(), 400);
-		} catch (e: any) {
-			console.error(`[spotify-control] ${label} failed`, e);
-			new Notice(`Spotify ${label}: ${e?.message ?? e}`);
+			window.setTimeout(() => {
+				this.runUiAction(() => this.poll(), 'poll after player action');
+			}, 400);
+		} catch (error: unknown) {
+			console.error(`[spotify-control] ${label} failed`, error);
+			new Notice(`Spotify ${label}: ${errorMessage(error)}`);
 		}
 	}
 
@@ -1396,10 +1455,13 @@ export class SpotifyView extends ItemView {
 			if (this.lastState.isEpisode) {
 				this.renderLyricsForEpisode();
 			} else {
-				this.fetchAndRenderLyrics(this.lastState);
+				this.runUiAction(
+					() => this.fetchAndRenderLyrics(this.lastState),
+					'load lyrics',
+				);
 			}
 		} else if (next === 'queue') {
-			this.fetchAndRenderQueue();
+			this.runUiAction(() => this.fetchAndRenderQueue(), 'load queue');
 		}
 	}
 
@@ -1464,17 +1526,26 @@ export class SpotifyView extends ItemView {
 			row.addEventListener('click', () => {
 				const ctx = this.lastState.contextUri;
 				if (ctx) {
-					this.callDirect(
-						() => this.plugin.api.play({
-							contextUri: ctx,
-							offset: { uri: item.uri },
-						}),
-						'play',
+					this.runUiAction(
+						() =>
+							this.callDirect(
+								() =>
+									this.plugin.api.play({
+										contextUri: ctx,
+										offset: { uri: item.uri },
+									}),
+								'play',
+							),
+						'play queue item',
 					);
 				} else {
-					this.callDirect(
-						() => this.plugin.api.play({ uris: [item.uri] }),
-						'play',
+					this.runUiAction(
+						() =>
+							this.callDirect(
+								() => this.plugin.api.play({ uris: [item.uri] }),
+								'play',
+							),
+						'play queue item',
 					);
 				}
 			});
@@ -1528,7 +1599,7 @@ export class SpotifyView extends ItemView {
 		const isTrack = state.trackUri.startsWith('spotify:track:');
 		if (this.plugin.settings.enableLyrics && state.trackUri && isTrack) {
 			if (this.currentPanel === 'lyrics') {
-				this.fetchAndRenderLyrics(state);
+				this.runUiAction(() => this.fetchAndRenderLyrics(state), 'load lyrics');
 			} else {
 				this.plugin.lyrics
 					.get({
@@ -1687,9 +1758,13 @@ export class SpotifyView extends ItemView {
 				// so the highlight snaps to the clicked line immediately
 				// instead of waiting for the next /me/player poll.
 				el.addEventListener('click', () => {
-					this.callDirect(
-						() => this.plugin.api.seek(line.timeMs),
-						'seek',
+					this.runUiAction(
+						() =>
+							this.callDirect(
+								() => this.plugin.api.seek(line.timeMs),
+								'seek',
+							),
+						'seek to lyric',
 					);
 					this.startLocalProgress(line.timeMs);
 					this.updateActiveLyric(line.timeMs);
@@ -1871,8 +1946,8 @@ function preloadImage(url: string): void {
 	_preloadedUrls.add(url);
 	// Bounded set so very-long sessions don't slowly grow it forever.
 	if (_preloadedUrls.size > 100) {
-		const first = _preloadedUrls.values().next().value;
-		if (first) _preloadedUrls.delete(first);
+		const first = _preloadedUrls.values().next();
+		if (!first.done) _preloadedUrls.delete(first.value);
 	}
 	const img = new Image();
 	img.decoding = 'async';

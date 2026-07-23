@@ -39,11 +39,6 @@ const CACHE_TTL_MS = 5_000;
 /** Fetcher signature — returns parsed JSON body. */
 export type QueueFetcher = () => Promise<{ status: number; json?: unknown }>;
 
-interface RawQueueResponse {
-	currently_playing?: any;
-	queue?: any[];
-}
-
 export class QueueService {
 	private fetcher: QueueFetcher;
 	private cache: QueueSnapshot | null = null;
@@ -101,11 +96,11 @@ export class QueueService {
 				console.warn('[spotify-control] queue fetch HTTP', resp.status);
 				return empty;
 			}
-			const body = resp.json as RawQueueResponse | undefined;
-			if (!body?.queue) return empty;
+			const body = parseQueueResponse(resp.json);
+			if (!body) return empty;
 			return {
-				upcoming: body.queue.map(normalizeItem).filter((x): x is QueueItem => !!x),
-				currentTrackUri: body.currently_playing?.uri ?? fallbackTrackUri,
+				upcoming: body.queue,
+				currentTrackUri: body.currentTrackUri ?? fallbackTrackUri,
 				fetchedAt: Date.now(),
 			};
 		} catch (e) {
@@ -115,18 +110,64 @@ export class QueueService {
 	}
 }
 
-function normalizeItem(raw: any): QueueItem | null {
-	if (!raw?.uri) return null;
-	const isEpisode = raw.type === 'episode' || !!raw.show;
+interface ParsedQueueResponse {
+	currentTrackUri: string | null;
+	queue: QueueItem[];
+}
+
+function parseQueueResponse(value: unknown): ParsedQueueResponse | null {
+	if (!isRecord(value) || !Array.isArray(value.queue)) return null;
+	const currentTrackUri = isRecord(value.currently_playing)
+		? optionalString(value.currently_playing.uri)
+		: null;
 	return {
-		name: raw.name ?? '(unknown)',
-		artist:
-			raw.artists?.map((a: any) => a.name).join(', ') ?? raw.show?.name ?? '',
-		album: raw.album?.name ?? raw.show?.publisher ?? '',
-		uri: raw.uri,
-		imageUrl:
-			raw.album?.images?.[0]?.url ?? raw.images?.[0]?.url ?? null,
-		durationMs: raw.duration_ms ?? 0,
+		currentTrackUri,
+		queue: value.queue
+			.map(normalizeItem)
+			.filter((item): item is QueueItem => item !== null),
+	};
+}
+
+function normalizeItem(raw: unknown): QueueItem | null {
+	if (!isRecord(raw)) return null;
+	const uri = optionalString(raw.uri);
+	if (!uri) return null;
+	const show = isRecord(raw.show) ? raw.show : null;
+	const album = isRecord(raw.album) ? raw.album : null;
+	const isEpisode = raw.type === 'episode' || show !== null;
+	return {
+		name: optionalString(raw.name) ?? '(unknown)',
+		artist: artistNames(raw.artists) ?? optionalString(show?.name) ?? '',
+		album: optionalString(album?.name) ?? optionalString(show?.publisher) ?? '',
+		uri,
+		imageUrl: firstImageUrl(album?.images) ?? firstImageUrl(raw.images),
+		durationMs: optionalNumber(raw.duration_ms) ?? 0,
 		kind: isEpisode ? 'episode' : 'track',
 	};
+}
+
+function artistNames(value: unknown): string | null {
+	if (!Array.isArray(value)) return null;
+	const names = value
+		.map((artist) => isRecord(artist) ? optionalString(artist.name) : null)
+		.filter((name): name is string => name !== null);
+	return names.length > 0 ? names.join(', ') : null;
+}
+
+function firstImageUrl(value: unknown): string | null {
+	if (!Array.isArray(value)) return null;
+	const first: unknown = value[0];
+	return isRecord(first) ? optionalString(first.url) : null;
+}
+
+function optionalString(value: unknown): string | null {
+	return typeof value === 'string' ? value : null;
+}
+
+function optionalNumber(value: unknown): number | null {
+	return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
 }

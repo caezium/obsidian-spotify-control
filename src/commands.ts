@@ -11,8 +11,8 @@ import { Editor, Notice } from 'obsidian';
 import type SpotifyControlPlugin from './main';
 import { registerCaptureCommands } from './capture-commands';
 import { SpotifySearchModal } from './search';
-import { SPOTIFY_VIEW_TYPE } from './view';
-import { parseSpotifyResource } from './util';
+import { SpotifyView, SPOTIFY_VIEW_TYPE } from './view';
+import { errorMessage, parseSpotifyResource } from './util';
 
 export function registerCommands(plugin: SpotifyControlPlugin) {
 	const requireAuth = () => {
@@ -31,7 +31,7 @@ export function registerCommands(plugin: SpotifyControlPlugin) {
 
 	plugin.addCommand({
 		id: 'open-web-player',
-		name: 'Open Spotify Web Player',
+		name: 'Open Spotify web player',
 		callback: () => plugin.openSpotifyWebPlayer(),
 	});
 
@@ -46,12 +46,15 @@ export function registerCommands(plugin: SpotifyControlPlugin) {
 			// Find the sidebar view and toggle its lyrics panel.
 			const leaves = plugin.app.workspace.getLeavesOfType(SPOTIFY_VIEW_TYPE);
 			if (leaves.length === 0) {
-				plugin.activateView();
+				plugin.activateView().catch((error: unknown) => {
+					console.error('[spotify-control] open sidebar failed', error);
+					new Notice(`Could not open the Spotify sidebar: ${errorMessage(error)}`);
+				});
 				new Notice('Open the Spotify sidebar first.');
 				return;
 			}
-			const view = leaves[0].view as any;
-			view.lyricsToggleBtn?.click();
+			const view = leaves[0].view;
+			if (view instanceof SpotifyView) view.togglePanel('lyrics');
 		},
 	});
 
@@ -64,8 +67,8 @@ export function registerCommands(plugin: SpotifyControlPlugin) {
 				const state = await plugin.api.getPlaybackState();
 				if (state?.is_playing) await plugin.api.pause();
 				else await plugin.api.play();
-			} catch (e: any) {
-				new Notice(`Play/pause: ${e?.message ?? e}`);
+			} catch (error: unknown) {
+				new Notice(`Play/pause: ${errorMessage(error)}`);
 			}
 		},
 	});
@@ -77,8 +80,8 @@ export function registerCommands(plugin: SpotifyControlPlugin) {
 			if (!requireAuth()) return;
 			try {
 				await plugin.api.next();
-			} catch (e: any) {
-				new Notice(`Next: ${e?.message ?? e}`);
+			} catch (error: unknown) {
+				new Notice(`Next: ${errorMessage(error)}`);
 			}
 		},
 	});
@@ -90,8 +93,8 @@ export function registerCommands(plugin: SpotifyControlPlugin) {
 			if (!requireAuth()) return;
 			try {
 				await plugin.api.previous();
-			} catch (e: any) {
-				new Notice(`Previous: ${e?.message ?? e}`);
+			} catch (error: unknown) {
+				new Notice(`Previous: ${errorMessage(error)}`);
 			}
 		},
 	});
@@ -117,8 +120,8 @@ export function registerCommands(plugin: SpotifyControlPlugin) {
 				const next = !state?.shuffle_state;
 				await plugin.api.shuffle(next);
 				new Notice(`Shuffle ${next ? 'on' : 'off'}`);
-			} catch (e: any) {
-				new Notice(`Shuffle: ${e?.message ?? e}`);
+			} catch (error: unknown) {
+				new Notice(`Shuffle: ${errorMessage(error)}`);
 			}
 		},
 	});
@@ -154,8 +157,8 @@ export function registerCommands(plugin: SpotifyControlPlugin) {
 					await plugin.api.play({ contextUri: resource.uri });
 				}
 				new Notice('Spotify: playing.');
-			} catch (e: any) {
-				new Notice(`Play failed: ${e?.message ?? e}`);
+			} catch (error: unknown) {
+				new Notice(`Play failed: ${errorMessage(error)}`);
 			}
 		},
 	});
@@ -174,8 +177,8 @@ async function adjustVolume(plugin: SpotifyControlPlugin, delta: number) {
 		const next = Math.max(0, Math.min(100, cur + delta));
 		await plugin.api.volume(next);
 		new Notice(`Volume: ${next}%`);
-	} catch (e: any) {
-		new Notice(`Volume: ${e?.message ?? e}`);
+	} catch (error: unknown) {
+		new Notice(`Volume: ${errorMessage(error)}`);
 	}
 }
 
