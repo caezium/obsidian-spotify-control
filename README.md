@@ -2,9 +2,9 @@
 
 <img src="https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%23483699&label=downloads&query=%24%5B%22spotify-control%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json&style=for-the-badge" alt="Obsidian Downloads">
 
-Control Spotify from inside Obsidian. A now-playing sidebar with hover-revealed transport, time-synced lyrics, upcoming-tracks queue, search palette, hotkey-bindable transport commands, and "insert track into note."
+Control Spotify from inside Obsidian. A now-playing sidebar with hover-revealed transport, time-synced lyrics, upcoming-tracks queue, search palette, hotkey-bindable transport commands, and track/lyrics capture for your vault.
 
-Works on **Spotify Free** for display features (now-playing, lyrics, queue, search, insert-into-note). **Premium** is required for playback control (play/pause/skip/seek/shuffle/repeat/volume) — that's a Spotify Web API restriction, not a plugin limitation. Free users get a clear "Premium required" message instead of silent failures when they try restricted actions.
+Works on **Spotify Free** for display and capture features (now-playing, lyrics, queue, search, notes). **Premium** is required for playback control (play/pause/skip/seek/shuffle/repeat/volume) — that's a Spotify Web API restriction, not a plugin limitation. Free users get a clear "Premium required" message instead of silent failures when they try restricted actions.
 
 
 
@@ -57,7 +57,9 @@ Works on **Spotify Free** for display features (now-playing, lyrics, queue, sear
 
 **Search palette.** Command-palette-style modal for searching tracks, albums, and playlists. Track results prompt "Play now" or "Add to queue."
 
-**Insert track into note.** Drops the current track into your active editor using a configurable template (defaults to a `> [!music]` callout with a Spotify link). Variables: `{{name}} {{artist}} {{album}} {{url}} {{uri}}`.
+**Capture tracks as notes.** Insert the current track into an active editor, including editors opened by QuickAdd or Commander macros, or create/reopen a dedicated song note in a configurable folder. The filename and note body are templated; variables are `{{name}} {{artist}} {{album}} {{url}} {{uri}} {{lyrics}} {{lrc}}`, plus `{{show}}` and `{{publisher}}` for podcasts.
+
+**Capture lyrics.** Insert lyrics into the active note with a configurable template, copy them to the clipboard, or save them in the vault. The original synchronized LRCLIB payload is saved as `.lrc`; tracks with plain lyrics only fall back to `.txt`.
 
 **Play any Spotify URI under cursor.** Bindable command — works on `spotify:track:abc` URIs and `https://open.spotify.com/...` URLs (including `?si=` share tokens and `intl-XX/` locale prefixes).
 
@@ -112,6 +114,10 @@ The first time you control playback after starting cold, the plugin auto-transfe
 - Search Spotify…
 - Play Spotify URI/URL under cursor
 - Insert now-playing into note
+- Create note from now playing
+- Insert now-playing lyrics into note
+- Copy now-playing lyrics
+- Save now-playing lyrics file
 
 ## Settings
 
@@ -126,7 +132,12 @@ The first time you control playback after starting cold, the plugin auto-transfe
 | **Progress bar on album art** | Thin progress line along the bottom edge of the art, clickable to seek. Hides the separate seek row. Default off. |
 | **Volume button on album art** | Speaker button at the bottom-right of the art with a popover slider. Hides the separate volume row. Default off. |
 | **Sidebar poll interval (ms)** | How often to refresh playback state. Default 3000. |
-| **Insert-now-playing template** | Template for the insert command |
+| **Insert-now-playing template** | Template for inserting track metadata into the active note |
+| **Now-playing note folder** | Destination for song notes; missing folders are created automatically |
+| **Now-playing note filename** | Filename template shared by song notes and exported lyrics |
+| **Now-playing note template** | Full Markdown body used when creating a song note |
+| **Lyrics insert template** | Template for inserting lyrics into the active note |
+| **Lyrics export folder** | Destination for `.lrc` and plain-text lyrics files |
 | **Spotify Web Player → Open in** | External browser (recommended) or Obsidian tab (UI only) |
 
 ## Architecture
@@ -138,7 +149,9 @@ src/
 ├── api.ts               Direct requestUrl wrapper for Spotify Web API
 ├── view.ts              Now-playing sidebar (ItemView)
 ├── search.ts            Spotify search modal (SuggestModal)
-├── commands.ts          All hotkey-bindable commands
+├── commands.ts          Transport and navigation commands
+├── capture-commands.ts  Note, clipboard, and lyrics-file commands
+├── capture.ts           Pure note paths, metadata templates, and lyrics export
 ├── lyrics.ts            LRC parsing + LyricsService (pure, no Obsidian deps)
 ├── lyrics-fetcher.ts    Obsidian requestUrl bridge for LyricsService
 ├── queue.ts             Queue snapshot + cache (pure)
@@ -148,11 +161,10 @@ src/
 └── types.ts             Settings shape + scopes + redirect URI
 
 tests/
-├── util.test.ts         24 tests for the pure helpers
-└── lyrics.test.ts       25 tests for LRC parser + LyricsService
+├── capture.test.ts      Now-playing metadata, paths, and lyrics export
+├── util.test.ts         Tests for the pure helpers
+└── lyrics.test.ts       Tests for LRC parsing + LyricsService
 ```
-
-49 unit tests, run with `npm test`.
 
 ## Token storage
 
@@ -175,7 +187,7 @@ Optimizations:
 - Devices fetched only on first poll + when the device picker opens
 - `togglePlay` reads cached `lastState` instead of an extra fetch per click
 - Track changes trigger background prefetch of lyrics, queue, and upcoming-track album art
-- Bundle is 64 KB (no third-party SDK; direct `requestUrl` for both reads and writes)
+- Bundle is 76 KB (no third-party SDK; direct `requestUrl` for both reads and writes)
 
 ## Mobile (preview)
 

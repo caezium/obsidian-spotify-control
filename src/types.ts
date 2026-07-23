@@ -28,8 +28,23 @@ export interface SpotifyControlSettings {
 	/** Polling interval in ms for the now-playing sidebar. */
 	pollIntervalMs: number;
 
-	/** Template for "insert now playing" command. {{name}} {{artist}} {{url}} {{album}} */
+	/** Template for "insert now playing"; supports metadata plus {{lyrics}} and {{lrc}}. */
 	insertTemplate: string;
+
+	/** Vault folder used by "Create note from now playing". Empty means vault root. */
+	nowPlayingNoteFolder: string;
+
+	/** Filename template for created Markdown notes and exported lyrics files. */
+	nowPlayingNoteNameTemplate: string;
+
+	/** Full Markdown body for a newly created now-playing note. */
+	nowPlayingNoteTemplate: string;
+
+	/** Template used by "Insert now-playing lyrics into note". */
+	lyricsInsertTemplate: string;
+
+	/** Vault folder used by "Save now-playing lyrics file". */
+	lyricsFolder: string;
 
 	/**
 	 * Hover-reveal mode: prev/play/next live inside an overlay on the album
@@ -82,6 +97,12 @@ export const DEFAULT_SETTINGS: SpotifyControlSettings = {
 	tokens: null,
 	pollIntervalMs: 3000,
 	insertTemplate: '> [!music] Now playing\n> [{{name}} — {{artist}}]({{url}})',
+	nowPlayingNoteFolder: 'Media',
+	nowPlayingNoteNameTemplate: '{{artist}} - {{name}}',
+	nowPlayingNoteTemplate:
+		'# {{name}}\n\n> [!music]\n> [{{name}} — {{artist}}]({{url}})\n\n',
+	lyricsInsertTemplate: '## Lyrics\n\n{{lyrics}}',
+	lyricsFolder: 'Media/Lyrics',
 	hoverRevealControls: true,
 	enableLyrics: true,
 	lyricsPosition: 'below',

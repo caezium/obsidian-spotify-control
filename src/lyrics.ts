@@ -36,16 +36,24 @@ export interface SyncedLine {
 export interface LyricsResult {
 	/** Empty when the track is instrumental or no lyrics exist. */
 	lines: SyncedLine[];
-	/** Plain-text fallback when synced lyrics aren't available. */
+	/** Human-readable lyrics when LRCLIB provides them. */
 	plainText: string | null;
+	/** Original LRCLIB synchronized payload, retained for lossless .lrc export. */
+	syncedText: string | null;
 	/** "synced" | "plain" | "instrumental" | "none". */
 	kind: 'synced' | 'plain' | 'instrumental' | 'none';
 }
 
-export const LYRICS_NONE: LyricsResult = { lines: [], plainText: null, kind: 'none' };
+export const LYRICS_NONE: LyricsResult = {
+	lines: [],
+	plainText: null,
+	syncedText: null,
+	kind: 'none',
+};
 const LYRICS_INSTRUMENTAL: LyricsResult = {
 	lines: [],
 	plainText: null,
+	syncedText: null,
 	kind: 'instrumental',
 };
 
@@ -102,11 +110,21 @@ export class LyricsService {
 			if (body.syncedLyrics) {
 				const lines = parseLrc(body.syncedLyrics);
 				if (lines.length > 0) {
-					return { lines, plainText: body.plainLyrics ?? null, kind: 'synced' };
+					return {
+						lines,
+						plainText: body.plainLyrics ?? null,
+						syncedText: body.syncedLyrics,
+						kind: 'synced',
+					};
 				}
 			}
 			if (body.plainLyrics) {
-				return { lines: [], plainText: body.plainLyrics, kind: 'plain' };
+				return {
+					lines: [],
+					plainText: body.plainLyrics,
+					syncedText: null,
+					kind: 'plain',
+				};
 			}
 			return LYRICS_NONE;
 		} catch (e) {
@@ -212,4 +230,3 @@ export function activeLineIndex(lines: SyncedLine[], positionMs: number): number
 	}
 	return lo;
 }
-

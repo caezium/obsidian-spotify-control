@@ -7,11 +7,12 @@
  * still use the SDK because typed shapes are nicer for getPlaybackState etc.
  */
 
-import { Editor, MarkdownView, Notice } from 'obsidian';
+import { Editor, Notice } from 'obsidian';
 import type SpotifyControlPlugin from './main';
+import { registerCaptureCommands } from './capture-commands';
 import { SpotifySearchModal } from './search';
 import { SPOTIFY_VIEW_TYPE } from './view';
-import { parseSpotifyResource, renderTemplate } from './util';
+import { parseSpotifyResource } from './util';
 
 export function registerCommands(plugin: SpotifyControlPlugin) {
 	const requireAuth = () => {
@@ -159,45 +160,7 @@ export function registerCommands(plugin: SpotifyControlPlugin) {
 		},
 	});
 
-	plugin.addCommand({
-		id: 'insert-now-playing',
-		name: 'Insert now-playing into note',
-		editorCallback: async (editor: Editor, _view: MarkdownView) => {
-			if (!requireAuth()) return;
-			try {
-				const state = await plugin.api.getPlaybackState();
-				const item = state?.item as any;
-				if (!item) {
-					new Notice('Nothing is playing.');
-					return;
-				}
-				// For podcast episodes:
-				//   - {{artist}} falls back to the show name
-				//   - {{album}} falls back to the publisher
-				//   - {{show}} and {{publisher}} are also available explicitly
-				// so users can author episode-aware templates without losing
-				// the simple track-only case.
-				const isEpisode = item.type === 'episode' || !!item.show;
-				const showName = item.show?.name ?? '';
-				const publisher = item.show?.publisher ?? '';
-				const artistName =
-					item.artists?.map((a: any) => a.name).join(', ') ?? (isEpisode ? showName : '');
-				const albumName = item.album?.name ?? (isEpisode ? publisher : '');
-				const text = renderTemplate(plugin.settings.insertTemplate, {
-					name: item.name,
-					artist: artistName,
-					album: albumName,
-					show: showName,
-					publisher,
-					url: item.external_urls?.spotify,
-					uri: item.uri,
-				});
-				editor.replaceSelection(text);
-			} catch (e: any) {
-				new Notice(`Insert failed: ${e?.message ?? e}`);
-			}
-		},
-	});
+	registerCaptureCommands(plugin, requireAuth);
 }
 
 async function adjustVolume(plugin: SpotifyControlPlugin, delta: number) {

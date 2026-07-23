@@ -163,6 +163,27 @@ test('LyricsService: caches by uri (no double-fetch)', async () => {
 	assert.equal(calls, 1);
 });
 
+test('LyricsService: preserves the original synced lyrics for LRC export', async () => {
+	const syncedLyrics = '[ar:Test Artist]\n[00:01.23]First line\n[00:04.56]Second line';
+	const svc = new LyricsService(async () => ({
+		status: 200,
+		json: {
+			instrumental: false,
+			plainLyrics: 'First line\nSecond line',
+			syncedLyrics,
+		},
+	}));
+	const result = await svc.get({
+		uri: 'spotify:track:lrc',
+		trackName: 'Test Song',
+		artist: 'Test Artist',
+		album: 'Test Album',
+		durationMs: 60_000,
+	});
+
+	assert.equal(result.syncedText, syncedLyrics);
+});
+
 test('LyricsService: dedupes concurrent fetches', async () => {
 	let calls = 0;
 	const svc = new LyricsService(async () => {

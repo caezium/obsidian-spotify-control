@@ -351,7 +351,7 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('Insert-now-playing template')
 			.setDesc(
-				'Template for the "Insert now-playing into note" command. Variables: {{name}} {{artist}} {{album}} {{url}} {{uri}}. For podcasts: {{show}} {{publisher}} are also available; {{artist}} falls back to the show name and {{album}} to the publisher.',
+				'Template for the "Insert now-playing into note" command. Variables: {{name}} {{artist}} {{album}} {{url}} {{uri}} {{lyrics}} {{lrc}}. For podcasts: {{show}} {{publisher}} are also available; {{artist}} falls back to the show name and {{album}} to the publisher.',
 			)
 			.addTextArea((t) => {
 				t.inputEl.rows = 4;
@@ -362,7 +362,80 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 				});
 			});
 
+		new Setting(containerEl)
+			.setName('Now-playing note folder')
+			.setDesc(
+				'Folder used by "Create note from now playing". Missing folders are created automatically. Leave empty for the vault root.',
+			)
+			.addText((t) =>
+				t
+					.setPlaceholder('Media')
+					.setValue(this.plugin.settings.nowPlayingNoteFolder)
+					.onChange(async (v) => {
+						this.plugin.settings.nowPlayingNoteFolder = v;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName('Now-playing note filename')
+			.setDesc(
+				'Filename template used for song notes and lyrics files. Variables: {{name}} {{artist}} {{album}} {{show}} {{publisher}} {{url}} {{uri}}.',
+			)
+			.addText((t) =>
+				t
+					.setPlaceholder('{{artist}} - {{name}}')
+					.setValue(this.plugin.settings.nowPlayingNoteNameTemplate)
+					.onChange(async (v) => {
+						this.plugin.settings.nowPlayingNoteNameTemplate = v;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName('Now-playing note template')
+			.setDesc(
+				'Full Markdown body for newly created song notes. Uses the same variables as the insert template, including {{lyrics}} and {{lrc}}.',
+			)
+			.addTextArea((t) => {
+				t.inputEl.rows = 7;
+				t.inputEl.style.width = '100%';
+				t.setValue(this.plugin.settings.nowPlayingNoteTemplate).onChange(async (v) => {
+					this.plugin.settings.nowPlayingNoteTemplate = v;
+					await this.plugin.saveSettings();
+				});
+			});
+
 		// ── Lyrics ────────────────────────────────────────────────────
+		new Setting(containerEl)
+			.setName('Lyrics insert template')
+			.setDesc(
+				'Template used by "Insert now-playing lyrics into note". Variables include {{lyrics}}, raw synchronized {{lrc}}, and all now-playing fields.',
+			)
+			.addTextArea((t) => {
+				t.inputEl.rows = 4;
+				t.inputEl.style.width = '100%';
+				t.setValue(this.plugin.settings.lyricsInsertTemplate).onChange(async (v) => {
+					this.plugin.settings.lyricsInsertTemplate = v;
+					await this.plugin.saveSettings();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName('Lyrics export folder')
+			.setDesc(
+				'Folder used by "Save now-playing lyrics file". Synced lyrics are saved as .lrc; plain lyrics fall back to .txt.',
+			)
+			.addText((t) =>
+				t
+					.setPlaceholder('Media/Lyrics')
+					.setValue(this.plugin.settings.lyricsFolder)
+					.onChange(async (v) => {
+						this.plugin.settings.lyricsFolder = v;
+						await this.plugin.saveSettings();
+					}),
+			);
+
 		new Setting(containerEl)
 			.setName('Show lyrics button')
 			.setDesc(
