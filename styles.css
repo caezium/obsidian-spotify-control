@@ -28,6 +28,10 @@
 	-webkit-font-smoothing: antialiased;
 }
 
+.sc-settings-textarea {
+	width: 100%;
+}
+
 /* ── Empty state ──────────────────────────────────────────────────── */
 .spotify-control-view .sc-empty {
 	display: none;
@@ -1338,4 +1342,3 @@
  * users can hit the duplicate copies in the transport row. (Adding them
  * to the overlay would crowd the art and the user can still seek via the
  * progress bar anyway.) */
-

@@ -308,7 +308,7 @@ export class SpotifyView extends ItemView {
 
 		this.artWrapEl = artStack.createDiv({ cls: 'sc-art-wrap' });
 		this.artEl = this.artWrapEl.createEl('img', { cls: 'sc-art' });
-		this.artEl.style.display = 'none';
+		this.artEl.setCssStyles({ display: 'none' });
 		this.artPlaceholderEl = this.artWrapEl.createDiv({ cls: 'sc-art-placeholder' });
 		setIcon(this.artPlaceholderEl, 'music');
 
@@ -1032,14 +1032,14 @@ export class SpotifyView extends ItemView {
 		}
 
 		if (!connected) {
-			this.emptyEl.style.display = 'block';
+			this.emptyEl.setCssStyles({ display: 'block' });
 			this.renderEmptyState();
-			this.playerEl.style.display = 'none';
+			this.playerEl.setCssStyles({ display: 'none' });
 			this.statusEl.setText('');
 			return;
 		}
 		if (!state.hasActiveDevice) {
-			this.emptyEl.style.display = 'block';
+			this.emptyEl.setCssStyles({ display: 'block' });
 			this.emptyTextEl.setText(
 				hasDevices
 					? 'No active Spotify device. Start Spotify on a device, or pick one below.'
@@ -1053,21 +1053,21 @@ export class SpotifyView extends ItemView {
 				text: 'Open Spotify Web Player',
 			});
 			openBtn.addEventListener('click', () => this.plugin.openSpotifyWebPlayer());
-			this.playerEl.style.display = hasDevices ? 'flex' : 'none';
+			this.playerEl.setCssStyles({ display: hasDevices ? 'flex' : 'none' });
 			return;
 		}
 
-		this.emptyEl.style.display = 'none';
-		this.playerEl.style.display = 'flex';
+		this.emptyEl.setCssStyles({ display: 'none' });
+		this.playerEl.setCssStyles({ display: 'flex' });
 
 		// Album art
 		if (state.albumArtUrl) {
 			if (this.artEl.src !== state.albumArtUrl) this.artEl.src = state.albumArtUrl;
-			this.artEl.style.display = 'block';
-			this.artPlaceholderEl.style.display = 'none';
+			this.artEl.setCssStyles({ display: 'block' });
+			this.artPlaceholderEl.setCssStyles({ display: 'none' });
 		} else {
-			this.artEl.style.display = 'none';
-			this.artPlaceholderEl.style.display = 'flex';
+			this.artEl.setCssStyles({ display: 'none' });
+			this.artPlaceholderEl.setCssStyles({ display: 'flex' });
 		}
 
 		// Text — only setText when value actually changed. setText still works
@@ -1878,4 +1878,3 @@ function preloadImage(url: string): void {
 	img.decoding = 'async';
 	img.src = url;
 }
-

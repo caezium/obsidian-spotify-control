@@ -193,7 +193,7 @@ export default class SpotifyControlPlugin extends Plugin {
 			if (leaf)
 				await leaf.setViewState({ type: SPOTIFY_VIEW_TYPE, active: true });
 		}
-		if (leaf) workspace.revealLeaf(leaf);
+		if (leaf) workspace.setActiveLeaf(leaf, { focus: true });
 	}
 
 	/**
@@ -216,7 +216,7 @@ export default class SpotifyControlPlugin extends Plugin {
 					state: { url, navigate: true },
 					active: true,
 				} as any);
-				this.app.workspace.revealLeaf(leaf);
+				this.app.workspace.setActiveLeaf(leaf, { focus: true });
 				new Notice('Opened Spotify in Obsidian (audio playback may not work).');
 			} catch (e) {
 				console.error('[spotify-control] webviewer failed, falling back', e);
@@ -239,8 +239,6 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-
-		containerEl.createEl('h2', { text: 'Spotify Control' });
 
 		this.renderSetupHelp(containerEl);
 
@@ -355,7 +353,7 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 			)
 			.addTextArea((t) => {
 				t.inputEl.rows = 4;
-				t.inputEl.style.width = '100%';
+				t.inputEl.addClass('sc-settings-textarea');
 				t.setValue(this.plugin.settings.insertTemplate).onChange(async (v) => {
 					this.plugin.settings.insertTemplate = v;
 					await this.plugin.saveSettings();
@@ -399,7 +397,7 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 			)
 			.addTextArea((t) => {
 				t.inputEl.rows = 7;
-				t.inputEl.style.width = '100%';
+				t.inputEl.addClass('sc-settings-textarea');
 				t.setValue(this.plugin.settings.nowPlayingNoteTemplate).onChange(async (v) => {
 					this.plugin.settings.nowPlayingNoteTemplate = v;
 					await this.plugin.saveSettings();
@@ -414,7 +412,7 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 			)
 			.addTextArea((t) => {
 				t.inputEl.rows = 4;
-				t.inputEl.style.width = '100%';
+				t.inputEl.addClass('sc-settings-textarea');
 				t.setValue(this.plugin.settings.lyricsInsertTemplate).onChange(async (v) => {
 					this.plugin.settings.lyricsInsertTemplate = v;
 					await this.plugin.saveSettings();
@@ -482,7 +480,9 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 			);
 
 		// ── Controls on art ───────────────────────────────────────────
-		containerEl.createEl('h3', { text: 'Controls on art (experimental)' });
+		new Setting(containerEl)
+			.setName('Controls on art (experimental)')
+			.setHeading();
 		containerEl.createDiv({
 			cls: 'setting-item-description',
 			text:
@@ -516,7 +516,7 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 			);
 
 		// ── Spotify Web Player ────────────────────────────────────────
-		containerEl.createEl('h3', { text: 'Spotify Web Player' });
+		new Setting(containerEl).setName('Spotify Web Player').setHeading();
 		const webPlayerNote = containerEl.createDiv({ cls: 'setting-item-description' });
 		webPlayerNote.appendText(
 			'The "Open Spotify Web Player" command opens open.spotify.com. ',

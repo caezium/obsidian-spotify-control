@@ -326,7 +326,7 @@ async function ensureParentFolder(
 async function openFile(plugin: SpotifyControlPlugin, file: TFile): Promise<void> {
 	const leaf = plugin.app.workspace.getLeaf(false);
 	await leaf.openFile(file, { active: true });
-	await plugin.app.workspace.revealLeaf(leaf);
+	plugin.app.workspace.setActiveLeaf(leaf, { focus: true });
 }
 
 function errorMessage(error: unknown): string {

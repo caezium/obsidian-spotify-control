@@ -163,6 +163,10 @@ test('sanitizeFileName: protects Windows reserved device names', () => {
 	assert.equal(sanitizeFileName('lpt1'), '_lpt1');
 });
 
+test('sanitizeFileName: strips control characters', () => {
+	assert.equal(sanitizeFileName('A\u0000B\u001fC\u007f'), 'ABC');
+});
+
 test('settleCaptureTarget: follows a macro transition instead of using the old note', async () => {
 	let active = { id: 'Notes/old.md', value: 'old editor' };
 	const result = await settleCaptureTarget(

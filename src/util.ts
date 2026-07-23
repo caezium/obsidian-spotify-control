@@ -128,7 +128,7 @@ function getCrypto(): Crypto {
 	if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto?.subtle) {
 		return globalThis.crypto;
 	}
-	// eslint-disable-next-line @typescript-eslint/no-require-imports
+	// eslint-disable-next-line @typescript-eslint/no-require-imports -- Node 18 test fallback; this branch is unreachable in Obsidian.
 	const nodeCrypto = require('node:crypto') as { webcrypto: Crypto };
 	return nodeCrypto.webcrypto;
 }

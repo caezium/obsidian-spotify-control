@@ -108,8 +108,13 @@ export function buildCapturePath(
 }
 
 export function sanitizeFileName(value: string): string {
-	const clean = value
-		.replace(/[\u0000-\u001f\u007f]/g, '')
+	const withoutControlCharacters = Array.from(value)
+		.filter((character) => {
+			const codePoint = character.codePointAt(0);
+			return codePoint !== undefined && codePoint > 0x1f && codePoint !== 0x7f;
+		})
+		.join('');
+	const clean = withoutControlCharacters
 		.replace(/[\\/:*?"<>|]/g, '-')
 		.replace(/\s+/g, ' ')
 		.trim()
