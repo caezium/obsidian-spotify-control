@@ -16,12 +16,13 @@
  *     - Lets us implement NO_ACTIVE_DEVICE auto-retry in one place
  *     - Lets us do a one-shot 401 retry after refresh
  *
- *   We keep the SDK for *read* endpoints (search, getPlaybackState, devices)
- *   where its typed return shapes and error handling work fine.
+ *   Read endpoints use the same direct wrapper, which keeps response handling
+ *   consistent and avoids shipping an SDK for a small endpoint surface.
  */
 
 import { requestUrl, RequestUrlResponse, Notice } from 'obsidian';
 import type SpotifyControlPlugin from './main';
+import { spotifyPlayerRestrictionMessage } from './util';
 
 const BASE = 'https://api.spotify.com/v1';
 
@@ -127,14 +128,6 @@ export interface SpotifySearchResponse {
 	playlists?: { items: (SpotifyPlaylist | null)[] };
 	episodes?: { items: (SpotifyEpisodeSearchItem | null)[] };
 	shows?: { items: (SpotifyShowSearchItem | null)[] };
-}
-
-export interface SpotifyUserProfile {
-	id: string;
-	display_name: string;
-	email?: string;
-	/** "free" | "premium" | "open" — used to detect Premium-required restrictions */
-	product?: 'free' | 'premium' | 'open';
 }
 
 type Method = 'GET' | 'PUT' | 'POST' | 'DELETE';
@@ -276,20 +269,15 @@ export class SpotifyDirectApi {
 	async search(
 		q: string,
 		types: Array<'track' | 'album' | 'playlist' | 'artist' | 'episode' | 'show'>,
-		limit = 20,
+		limit = 5,
 	): Promise<SpotifySearchResponse> {
+		const boundedLimit = Math.max(1, Math.min(10, Math.round(limit)));
 		const r = await this.request({
 			method: 'GET',
 			path: '/search',
-			query: { q, type: types.join(','), limit },
+			query: { q, type: types.join(','), limit: boundedLimit },
 		});
 		return (r as SpotifySearchResponse) ?? {};
-	}
-
-	/** GET /me — current user profile (includes product = free|premium|open). */
-	async getCurrentUser(): Promise<SpotifyUserProfile | null> {
-		const r = await this.request({ method: 'GET', path: '/me' });
-		return r as SpotifyUserProfile | null;
 	}
 
 	/** Transfer playback to a device. If startPlaying is true, also begins playback. */
@@ -315,9 +303,10 @@ export class SpotifyDirectApi {
 	 *     "just starts" a few seconds after the user clicks even when we
 	 *     threw an error.
 	 *
-	 * Returns null on silent give-up (command may still execute server-side)
-	 * rather than throwing, so the caller doesn't show a noisy Notice for
-	 * what's effectively a transient race condition.
+	 * Device-wake retries can return null on a silent give-up because the
+	 * command may still execute server-side. A persistent direct restriction
+	 * throws tier-neutral guidance because Spotify no longer exposes enough
+	 * account data to identify its exact cause.
 	 */
 	private async withDeviceRetry(opts: RequestOpts): Promise<unknown> {
 		try {
@@ -348,30 +337,18 @@ export class SpotifyDirectApi {
 				}
 			}
 
-			// Path 2: restriction violated without prior transfer. Could be an
-			// ad, a track transition, or a genuinely disallowed action. One
-			// short delay + retry handles transition cases. If it persists,
-			// surface a friendly message instead of "Restriction violated".
+			// Path 2: restriction violated without prior transfer. Spotify no
+			// longer exposes account product in GET /me, so a client cannot
+			// reliably distinguish a Premium restriction from an ad, device,
+			// or track transition. Retry transient cases, then surface guidance
+			// that covers both permanent and temporary causes.
 			if (isRestrictionViolated(err)) {
-				// If the user is on Spotify Free, restriction-violated means
-				// "this feature requires Premium" — DON'T silently retry,
-				// surface a clear message immediately. Premium tier is
-				// detected by auth.detectPremiumTier() shortly after login.
-				if (this.plugin.isPremium === false) {
-					throw new Error(
-						'Spotify Premium required for this action (skip / play / shuffle / etc.).',
-					);
-				}
 				await sleep(800);
 				try {
 					return await this.request(opts);
 				} catch (e2) {
 					if (isRestrictionViolated(e2 as SpotifyError)) {
-						console.warn(
-							'[spotify-control] command restricted, may execute server-side',
-							opts.path,
-						);
-						return null;
+						throw new Error(spotifyPlayerRestrictionMessage());
 					}
 					throw e2;
 				}

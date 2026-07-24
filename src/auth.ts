@@ -19,8 +19,8 @@
  *     never accidentally invalidate a freshly-rotated refresh token.
  *   - 4xx on refresh = terminal (clear tokens, prompt re-login). 5xx/network
  *     = transient (exponential backoff retry up to 5 min).
- *   - Custom IAuthStrategy means the SDK never tries to refresh on its own,
- *     so we don't need to monkey-patch its internals.
+ *   - Refresh tokens can expire or be revoked, so any terminal refresh
+ *     response clears local tokens and asks the user to reconnect.
  */
 
 import { Notice, requestUrl } from 'obsidian';
@@ -60,7 +60,7 @@ export class SpotifyAuth {
 	}
 
 	/**
-	 * Called from Plugin.onload(). Restores SDK from stored tokens, schedules refresh.
+	 * Called from Plugin.onload(). Restores stored tokens and schedules refresh.
 	 */
 	async restore() {
 		const tokens = this.plugin.settings.tokens;
@@ -73,10 +73,6 @@ export class SpotifyAuth {
 		} else {
 			this.scheduleRefresh(tokens);
 		}
-		// Cache Premium tier in the background — non-blocking.
-		this.detectPremiumTier().catch((error: unknown) => {
-			console.warn('[spotify-control] tier detection failed', error);
-		});
 	}
 
 	/**
@@ -165,31 +161,8 @@ export class SpotifyAuth {
 			this.scheduleRefresh(data);
 			new Notice('Spotify connected.');
 			this.plugin.onAuthChanged();
-			// Detect Premium tier once on connection so the API layer can
-			// distinguish "you're on Free, this is genuinely disallowed"
-			// from "transient restriction, please retry".
-			this.detectPremiumTier().catch((error: unknown) => {
-				console.warn('[spotify-control] tier detection failed', error);
-			});
 		} finally {
 			this.pending = null;
-		}
-	}
-
-	/**
-	 * Fetch /me once and cache the `product` field on the plugin so the
-	 * api layer can surface "Premium required" instead of silently
-	 * swallowing restriction-violated errors for Free-tier users.
-	 */
-	private async detectPremiumTier() {
-		try {
-			const me = await this.plugin.api.getCurrentUser();
-			this.plugin.isPremium = me?.product === 'premium';
-		} catch (e) {
-			// Non-fatal — default false means we'll show clearer messaging
-			// even if we couldn't confirm. Better than over-claiming Premium.
-			console.warn('[spotify-control] tier detection failed', e);
-			this.plugin.isPremium = false;
 		}
 	}
 

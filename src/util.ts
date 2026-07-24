@@ -143,6 +143,15 @@ export function renderTemplate(
 	);
 }
 
+/**
+ * Spotify no longer exposes account product in Development Mode responses, so
+ * a persistent player restriction needs to explain both permanent and
+ * transient causes without guessing the user's subscription tier.
+ */
+export function spotifyPlayerRestrictionMessage(): string {
+	return 'Spotify rejected this player command. Playback controls require Premium; ads, device state, or track transitions can also temporarily block commands.';
+}
+
 /** Turn an unknown caught value into a safe user-facing message. */
 export function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);

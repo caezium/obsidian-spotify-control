@@ -4,9 +4,7 @@
 
 Control Spotify from inside Obsidian. A now-playing sidebar with hover-revealed transport, time-synced lyrics, upcoming-tracks queue, search palette, hotkey-bindable transport commands, and track/lyrics capture for your vault.
 
-Works on **Spotify Free** for display and capture features (now-playing, lyrics, queue, search, notes). **Premium** is required for playback control (play/pause/skip/seek/shuffle/repeat/volume) — that's a Spotify Web API restriction, not a plugin limitation. Free users get a clear "Premium required" message instead of silent failures when they try restricted actions.
-
-
+Spotify Development Mode now requires the developer-app owner to have an active **Spotify Premium** subscription. Playback control also requires Premium. A Free account can use display and capture features only when it has been allowlisted on somebody else's Premium-owned development app; Spotify limits each development app to five authorized users.
 
 <table align="center">
   <tr>
@@ -89,18 +87,43 @@ If anything misbehaves on mobile (layout, auth callback, missing UI elements), p
 
 ## Setup (one-time)
 
-1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and create an app. Name and description don't matter.
-2. In the app's settings, add this exact **Redirect URI**:
+1. Sign in to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) with the Premium account that will own the app, then create an app. Select **Web API** if Spotify asks which APIs you plan to use.
+2. In the app settings, add this exact **Redirect URI**:
+
    ```
    obsidian://spotify-control/auth
    ```
+
 3. Copy the **Client ID** from your app's main page. **No Client Secret needed** — this plugin uses PKCE.
-4. In Obsidian → Settings → Community plugins → enable **Spotify Control**.
-5. Open the Spotify Control settings tab, paste the Client ID, click **Log in**. Your browser will open Spotify's authorization page; after approving, you'll be redirected back into Obsidian.
+4. If you will connect a Spotify account other than the app owner, open the app's **Settings → Users Management** page and add that account's name and Spotify email. Development Mode allows up to five authorized users.
+5. In Obsidian → Settings → Community plugins, enable **Spotify Control**.
+6. Open the Spotify Control settings tab, paste the Client ID, and click **Log in**. Your browser will open Spotify's authorization page; after approving, it redirects to `obsidian://spotify-control/auth` and back into Obsidian.
 
 The first time you control playback after starting cold, the plugin auto-transfers playback to the first available device (so you don't need to manually pick one).
 
-> **Free tier?** Display features (now-playing, lyrics, queue, search, insert-into-note) work fine. Playback control (play/pause/skip/seek/etc.) returns "Premium required" — that restriction comes from Spotify's Web API, no plugin workaround possible.
+### Stuck on the OTP or verification page?
+
+The plugin does not generate, receive, or validate an OTP. That page belongs to Spotify account authentication, so first verify that the address is on `accounts.spotify.com`, then use the delivery method Spotify names on the page. If Spotify offers another verification or account-recovery method, use that; if it rate-limits more attempts, wait for the cooldown it shows. Never post the code in an issue or screenshot.
+
+If the code is accepted but Spotify Control still does not connect:
+
+- A successful browser login followed by Spotify `403` responses usually means the exact account is not listed under the app's **Settings → Users Management** page.
+- If the browser never returns to Obsidian, confirm the redirect URI is exactly `obsidian://spotify-control/auth`, allow the browser to open Obsidian, then click **Log in** again. The callback must finish while that login attempt is still pending.
+- If Spotify reports that the app is unavailable or the dashboard will not let you create it, confirm that the app owner still has an active Premium subscription.
+- If Spotify Control asks you to reconnect after months of working normally, log in again. Spotify refresh tokens now expire after six months, and the plugin clears the expired token instead of retrying forever.
+- A `429` with `QUOTA_EXCEEDED` is Spotify's shared Development Mode quota, not a bad OTP. Close duplicate Spotify sidebars or increase the poll interval, then try again later.
+
+If these steps do not match the page you see, open an issue with the page URL, Obsidian version, platform, and exact error text — with all codes, tokens, emails, and Client IDs redacted.
+
+## Current Spotify Development Mode limits
+
+- The app owner needs active Premium, and each client ID can authorize at most five users.
+- Spotify allows up to 25 client IDs per developer account, but all of those apps now share one Development Mode quota.
+- Refresh tokens expire after six months. Spotify Control already treats the resulting `invalid_grant` as a clean re-login instead of a permanent refresh loop.
+- Spotify still supports PKCE and custom redirect schemes such as this plugin's `obsidian://` callback, so no Client Secret or localhost callback is needed.
+- Spotify reduced search responses to at most 10 items per type. Spotify Control requests five and clamps future requests to the supported range.
+
+Spotify documents these changes in its [February 2026 migration guide](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide), [June refresh-token update](https://developer.spotify.com/blog/2026-06-18-refresh-token-expiration), and [July quota update](https://developer.spotify.com/blog/2026-07-23-web-api-quota-updates).
 
 ## Commands (hotkey-bindable in Settings → Hotkeys)
 
@@ -162,8 +185,10 @@ src/
 
 tests/
 ├── capture.test.ts      Now-playing metadata, paths, and lyrics export
-├── util.test.ts         Tests for the pure helpers
-└── lyrics.test.ts       Tests for LRC parsing + LyricsService
+├── lyrics.test.ts       LRC parsing + LyricsService
+├── queue.test.ts        Queue snapshot normalization and cache
+├── spotify-compat.test.ts OAuth and Spotify platform compatibility
+└── util.test.ts         Tests for the pure helpers
 ```
 
 ## Token storage
@@ -187,17 +212,7 @@ Optimizations:
 - Devices fetched only on first poll + when the device picker opens
 - `togglePlay` reads cached `lastState` instead of an extra fetch per click
 - Track changes trigger background prefetch of lyrics, queue, and upcoming-track album art
-- Bundle is 76 KB (no third-party SDK; direct `requestUrl` for both reads and writes)
-
-## Mobile (preview)
-
-The manifest declares mobile support (`isDesktopOnly: false`) and the architecture is cross-platform — all HTTP goes through Obsidian's `requestUrl`, OAuth uses the `obsidian://` callback that mobile Obsidian registers, and the sidebar `ItemView` opens in the mobile slide-over panel. But mobile is **best-effort and not yet validated end-to-end** — please file issues if anything misbehaves.
-
-Concrete differences on iOS / Android:
-
-- **Hover-reveal controls are force-disabled.** Touch has no hover, so the on-art overlay would be unreachable. The setting is hidden and the duplicate transport row below the art carries the controls.
-- **Tokens are stored in plaintext.** Mobile Obsidian doesn't expose Electron's `safeStorage`, so the encryption layer falls back to plaintext in `data.json`. The settings tab shows the `⚠️` indicator.
-- **OAuth flow** runs through the OS browser and returns via the `obsidian://spotify-control/auth` callback. Untested on iOS and Android in the current release — please report success/failure.
+- Bundle is 83 KB (no third-party SDK; direct `requestUrl` for both reads and writes)
 
 ## What's intentionally missing
 

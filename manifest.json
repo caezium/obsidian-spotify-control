@@ -1,9 +1,9 @@
 {
 	"id": "spotify-control",
 	"name": "Spotify Control",
-	"version": "0.7.3",
+	"version": "0.7.4",
 	"minAppVersion": "1.4.0",
-	"description": "Control Spotify from your notes. Now-playing sidebar, time-synced lyrics, queue, search, transport hotkeys, and track/lyrics capture. Display and capture work on Free; playback control requires Premium.",
+	"description": "Control Spotify from your notes with a now-playing sidebar, synced lyrics, queue, search, transport hotkeys, and track/lyrics capture. A Premium-owned developer app is required; playback controls require Premium.",
 	"author": "caezium",
 	"authorUrl": "https://github.com/caezium",
 	"isDesktopOnly": false

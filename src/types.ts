@@ -112,24 +112,17 @@ export const DEFAULT_SETTINGS: SpotifyControlSettings = {
 	webPlayerMode: 'external',
 };
 
-/** Spotify Web Player scopes needed across all features (Phase 1 + Phase 2). */
+/**
+ * Spotify Web API scopes used by the shipped feature set.
+ *
+ * Search is public, while sidebar reads and player commands use these three
+ * player scopes. Keeping this list exact avoids asking users for unrelated
+ * library, playlist, profile, and Web Playback SDK permissions.
+ */
 export const SCOPES = [
-	// Playback state + control
 	'user-read-playback-state',
 	'user-modify-playback-state',
 	'user-read-currently-playing',
-	// Web Playback SDK (Phase 2)
-	'streaming',
-	'user-read-email',
-	'user-read-private',
-	// Library + playlists (search results, queue context)
-	'user-library-read',
-	'user-library-modify',
-	'playlist-read-private',
-	'playlist-read-collaborative',
-	// Recently played + top tracks (future feature hooks)
-	'user-read-recently-played',
-	'user-top-read',
 ].join(' ');
 
 export const REDIRECT_URI = 'obsidian://spotify-control/auth';

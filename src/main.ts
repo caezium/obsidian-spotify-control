@@ -64,6 +64,9 @@ interface AppWithSettingsController extends App {
 	};
 }
 
+const SPOTIFY_SETUP_DESCRIPTION =
+	`Spotify Development Mode requires the app owner to have Premium. Create an app, add ${REDIRECT_URI} as its redirect URI, and paste the client ID below. Add any other login account under the app's Users Management page. No client secret is needed because this plugin uses PKCE.`;
+
 export default class SpotifyControlPlugin extends Plugin {
 	settings!: SpotifyControlSettings;
 	auth!: SpotifyAuth;
@@ -72,17 +75,6 @@ export default class SpotifyControlPlugin extends Plugin {
 	lyrics!: LyricsService;
 	queue!: QueueService;
 	private settingTab: SpotifyControlSettingTab | null = null;
-	/**
-	 * Spotify account tier. Set by auth.detectPremiumTier() shortly after
-	 * connection. Used by api.ts to distinguish "Free user can't do this"
-	 * from transient "Restriction violated" — so Free users get a clear
-	 * message instead of silence.
-	 *
-	 * Defaults to `true` (optimistic) to avoid false "Premium required"
-	 * warnings before the /me probe completes. Flipped to false only if
-	 * the probe explicitly returns product: "free" or "open".
-	 */
-	isPremium = true;
 
 	async onload() {
 		this.secure = new SecureStorage();
@@ -260,13 +252,11 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 		return [
 			{
 				name: 'Setup',
-				desc: `Create an app in the Spotify developer dashboard, add ${REDIRECT_URI} as its redirect URI, then paste the client ID below. No client secret is needed because this plugin uses PKCE.`,
+				desc: SPOTIFY_SETUP_DESCRIPTION,
 				render: (setting) => {
 					setting
 						.setName('Setup')
-						.setDesc(
-							`Create an app in the Spotify developer dashboard, add ${REDIRECT_URI} as its redirect URI, then paste the client ID below. No client secret is needed because this plugin uses PKCE.`,
-						)
+						.setDesc(SPOTIFY_SETUP_DESCRIPTION)
 						.addButton((button) =>
 							button
 								.setButtonText('Open Spotify dashboard')
@@ -881,7 +871,9 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 		});
 		link.target = '_blank';
 		link.rel = 'noopener,noreferrer';
-		li1.appendText(' and create an app.');
+		li1.appendText(
+			' and create an app. Spotify requires the app owner to have an active Premium subscription.',
+		);
 
 		const li2 = ol.createEl('li');
 		li2.appendText("In the app's settings, add this ");
@@ -896,11 +888,18 @@ class SpotifyControlSettingTab extends PluginSettingTab {
 		li3.createEl('em', { text: 'No client secret needed' });
 		li3.appendText(' — this plugin uses PKCE.');
 
+		const li4 = ol.createEl('li');
+		li4.appendText(
+			"If you'll log in with a different Spotify account, add its name and Spotify email under the app's ",
+		);
+		li4.createEl('strong', { text: 'Settings → users management' });
+		li4.appendText('. Development Mode allows up to five authorized users.');
+
 		ol.createEl('li', {
-			text: "Click log in. Your browser will open Spotify's auth page.",
+			text: "Click log in. Your browser will open Spotify's authorization page. If Spotify asks for a one-time code, use the delivery method named on that page; the plugin doesn't generate it.",
 		});
 		ol.createEl('li', {
-			text: "After approving, you'll be redirected back into Obsidian.",
+			text: "After approving, you'll be redirected back into Obsidian. A successful login followed by 403 errors usually means the account isn't in users management.",
 		});
 	}
 
