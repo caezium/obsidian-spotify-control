@@ -186,7 +186,7 @@ export class SpotifySearchModal extends SuggestModal<Result> {
 /** Tight ellipsis truncation for episode descriptions. */
 function truncate(s: string, max: number): string {
 	if (s.length <= max) return s;
-	return s.slice(0, max - 1).trimEnd() + '…';
+	return s.slice(0, max - 1).replace(/\s+$/, '') + '…';
 }
 
 class TrackActionModal extends Modal {
